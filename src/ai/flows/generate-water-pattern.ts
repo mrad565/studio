@@ -34,11 +34,29 @@ const patternPrompt = ai.definePrompt({
   output: {schema: GenerateWaterPatternOutputSchema},
   prompt: `You are an expert in designing patterns for digital water curtains.
 
-  Based on the text prompt provided by the user, generate a 2D array representing the water curtain pattern. Each inner array represents a column of valves, and each boolean represents whether the valve is open (true) or closed (false).
-  The water curtain has {{numValves}} valves.
-  The generated pattern should be visually appealing and suitable for display on a water curtain.
-  The number of inner arrays determines the duration of the animation. The number of booleans in each inner array should correspond to the number of valves.
+  Based on the text prompt provided by the user, generate a 2D array of booleans representing the water curtain pattern. The water curtain has {{numValves}} valves.
 
+  The structure of the output JSON must be \`{ "patternData": boolean[][] }\`.
+
+  The \`patternData\` array is a 2D array where:
+  - The outer array represents time steps, so its length determines the animation duration.
+  - Each inner array represents the state of all valves at a single time step. Its length MUST be exactly equal to \`numValves\`.
+  - \`patternData[t][v]\` is a boolean, where \`t\` is the time index and \`v\` is the valve index.
+  - \`true\` means the valve \`v\` is OPEN at time \`t\`.
+  - \`false\` means the valve \`v\` is CLOSED at time \`t\`.
+
+  For example, if \`numValves\` is 8 and the prompt is "a V shape", a good pattern would be:
+  {
+    "patternData": [
+      [false, false, false, true, true, false, false, false],
+      [false, false, true, false, false, true, false, false],
+      [false, true, false, false, false, false, true, false],
+      [true, false, false, false, false, false, false, true]
+    ]
+  }
+
+  Now, generate a pattern for the following request. Make the animation interesting and visually appealing.
+  
   Text Prompt: {{{textPrompt}}}
   
   Return the patternData in the required JSON format.

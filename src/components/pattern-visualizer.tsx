@@ -6,6 +6,7 @@ type PatternVisualizerProps = {
   patternData: boolean[][];
   speed?: number; // delay in ms
   isPlaying: boolean;
+  color?: string;
 };
 
 // Represents a single droplet of water
@@ -22,7 +23,7 @@ const VALVE_SPACING = 12;
 const DROPLET_BASE_LENGTH = 15;
 const DROPLET_BASE_SPEED = 4;
 
-export function PatternVisualizer({ patternData, speed = 100, isPlaying }: PatternVisualizerProps) {
+export function PatternVisualizer({ patternData, speed = 100, isPlaying, color = 'hsl(var(--primary))' }: PatternVisualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationFrameId = useRef<number>();
   const lastTickTime = useRef<number>(0);
@@ -74,7 +75,7 @@ export function PatternVisualizer({ patternData, speed = 100, isPlaying }: Patte
       
       // Update and draw droplets
       const newDroplets: Droplet[] = [];
-      ctx.strokeStyle = `hsl(var(--primary))`;
+      ctx.strokeStyle = color;
       ctx.lineWidth = 2;
       ctx.lineCap = 'round';
 
@@ -98,7 +99,7 @@ export function PatternVisualizer({ patternData, speed = 100, isPlaying }: Patte
       ctx.globalAlpha = 1;
 
       // Draw valves
-      ctx.fillStyle = `hsl(var(--border))`;
+      ctx.fillStyle = color;
       for (let i = 0; i < numValves; i++) {
         const x = startX + i * VALVE_SPACING;
         ctx.beginPath();
@@ -118,7 +119,7 @@ export function PatternVisualizer({ patternData, speed = 100, isPlaying }: Patte
         cancelAnimationFrame(animationFrameId.current);
       }
     };
-  }, [isPlaying, patternData, speed, numTimeSteps, numValves]);
+  }, [isPlaying, patternData, speed, numTimeSteps, numValves, color]);
   
   // Reset animation when pattern data changes
   useEffect(() => {
@@ -139,8 +140,8 @@ export function PatternVisualizer({ patternData, speed = 100, isPlaying }: Patte
                 <React.Fragment key={timeIndex}>
                 {Array.from({ length: numValves }).map((_, valveIndex) => (
                     <div key={`${timeIndex}-${valveIndex}`} className="min-w-0 min-h-0" style={{
-                        backgroundColor: patternData[timeIndex]?.[valveIndex] ? 'hsl(var(--primary))' : 'hsl(var(--border) / 0.1)',
-                        boxShadow: patternData[timeIndex]?.[valveIndex] ? '0 0 1px hsl(var(--primary))' : 'none',
+                        backgroundColor: patternData[timeIndex]?.[valveIndex] ? color : 'hsl(var(--border) / 0.1)',
+                        boxShadow: patternData[timeIndex]?.[valveIndex] ? `0 0 1px ${color}` : 'none',
                         borderRadius: '1px'
                     }}></div>
                 ))}

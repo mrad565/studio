@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useMemo } from "react";
 
 type PatternVisualizerProps = {
   patternData: boolean[][];
@@ -29,8 +29,10 @@ export function PatternVisualizer({ patternData, speed = 100, isPlaying, color =
   const lastTickTime = useRef<number>(0);
   const currentTimeStep = useRef<number>(0);
 
-  const numTimeSteps = patternData.length;
-  const numValves = patternData[0]?.length || 0;
+  const reversedPatternData = useMemo(() => [...patternData].reverse(), [patternData]);
+
+  const numTimeSteps = reversedPatternData.length;
+  const numValves = reversedPatternData[0]?.length || 0;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -56,7 +58,7 @@ export function PatternVisualizer({ patternData, speed = 100, isPlaying, color =
       // Handle time step advancement
       if (time - lastTickTime.current > speed) {
         lastTickTime.current = time;
-        const currentPatternStep = patternData[currentTimeStep.current];
+        const currentPatternStep = reversedPatternData[currentTimeStep.current];
         if (currentPatternStep) {
           currentPatternStep.forEach((valveOn, valveIndex) => {
             if (valveOn) {
@@ -119,12 +121,12 @@ export function PatternVisualizer({ patternData, speed = 100, isPlaying, color =
         cancelAnimationFrame(animationFrameId.current);
       }
     };
-  }, [isPlaying, patternData, speed, numTimeSteps, numValves, color]);
+  }, [isPlaying, reversedPatternData, speed, numTimeSteps, numValves, color]);
   
   // Reset animation when pattern data changes
   useEffect(() => {
     currentTimeStep.current = 0;
-  }, [patternData]);
+  }, [reversedPatternData]);
 
   if (numTimeSteps === 0 || numValves === 0) {
     return <div className="w-full h-full bg-transparent flex items-center justify-center text-muted-foreground text-xs">No pattern data</div>;
@@ -140,8 +142,8 @@ export function PatternVisualizer({ patternData, speed = 100, isPlaying, color =
                 <React.Fragment key={timeIndex}>
                 {Array.from({ length: numValves }).map((_, valveIndex) => (
                     <div key={`${timeIndex}-${valveIndex}`} className="min-w-0 min-h-0" style={{
-                        backgroundColor: patternData[timeIndex]?.[valveIndex] ? color : 'hsl(var(--border) / 0.1)',
-                        boxShadow: patternData[timeIndex]?.[valveIndex] ? `0 0 1px ${color}` : 'none',
+                        backgroundColor: reversedPatternData[timeIndex]?.[valveIndex] ? color : 'hsl(var(--border) / 0.1)',
+                        boxShadow: reversedPatternData[timeIndex]?.[valveIndex] ? `0 0 1px ${color}` : 'none',
                         borderRadius: '1px'
                     }}></div>
                 ))}

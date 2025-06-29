@@ -25,7 +25,6 @@ type ManualPatternEditorDialogProps = {
 };
 
 const MAX_ROWS = 100;
-const MAX_COLS = 64;
 
 export function ManualPatternEditorDialog({
   isOpen,
@@ -49,7 +48,7 @@ export function ManualPatternEditorDialog({
 
   useEffect(() => {
     const safeRows = Math.max(1, Math.min(rows, MAX_ROWS));
-    const safeCols = Math.max(1, Math.min(cols, MAX_COLS));
+    const safeCols = Math.max(8, cols);
     setGrid(Array.from({ length: safeRows }, () => Array(safeCols).fill(false)));
   }, [rows, cols, isOpen]);
 
@@ -65,9 +64,8 @@ export function ManualPatternEditorDialog({
       return;
     }
     const safeRows = Math.max(1, Math.min(rows, MAX_ROWS));
-    const safeCols = Math.max(1, Math.min(cols, MAX_COLS));
-    if (safeRows < 1 || safeCols < 1) {
-      toast({ variant: "destructive", title: "Error", description: "Rows and columns must be at least 1." });
+    if (safeRows < 1 || cols < 8 || cols % 8 !== 0) {
+      toast({ variant: "destructive", title: "Error", description: "Columns (valves) must be at least 8 and a multiple of 8." });
       return;
     }
 
@@ -75,7 +73,7 @@ export function ManualPatternEditorDialog({
       name,
       patternData: grid,
       source: "manual",
-      promptOrFile: `${safeRows}x${safeCols} grid`,
+      promptOrFile: `${safeRows}x${cols} grid`,
     });
     toast({ title: "Success", description: "Manual pattern saved!" });
     setIsOpen(false);
@@ -113,7 +111,7 @@ export function ManualPatternEditorDialog({
             </div>
             <div>
                 <Label htmlFor="pattern-cols" className="text-muted-foreground">Columns (Valves)</Label>
-                <Input id="pattern-cols" type="number" value={cols} onChange={(e) => setCols(Math.min(Number(e.target.value), MAX_COLS))} min="1" max={MAX_COLS} className="bg-card border-border" />
+                <Input id="pattern-cols" type="number" value={cols} onChange={(e) => setCols(Number(e.target.value))} min="8" step="8" className="bg-card border-border" />
             </div>
             <div className="flex flex-col gap-2 pt-4">
                  <Button onClick={handleClear} variant="outline" className="border-accent text-accent hover:bg-accent/20 hover:text-accent">

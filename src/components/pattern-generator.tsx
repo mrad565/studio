@@ -21,17 +21,26 @@ import { ManualPatternEditorDialog } from "./manual-pattern-editor-dialog";
 
 const textSchema = z.object({
   textPrompt: z.string().min(10, "Prompt must be at least 10 characters long."),
-  numValves: z.coerce.number().int().min(4, "Must have at least 4 valves.").max(64, "Cannot exceed 64 valves."),
+  numValves: z.coerce.number().int().min(8, "Must have at least 8 valves.").refine(
+    (n) => n % 8 === 0,
+    { message: "Number of valves must be a multiple of 8." }
+  ),
 });
 
 const imageSchema = z.object({
   image: z.any().refine(fileList => fileList?.length > 0, "Image is required."),
-  numValves: z.coerce.number().int().min(4, "Must have at least 4 valves.").max(64, "Cannot exceed 64 valves."),
+  numValves: z.coerce.number().int().min(8, "Must have at least 8 valves.").refine(
+    (n) => n % 8 === 0,
+    { message: "Number of valves must be a multiple of 8." }
+  ),
 });
 
 const svgSchema = z.object({
   svg: z.any().refine(fileList => fileList?.length > 0, "SVG file is required."),
-  numValves: z.coerce.number().int().min(4, "Must have at least 4 valves.").max(64, "Cannot exceed 64 valves."),
+  numValves: z.coerce.number().int().min(8, "Must have at least 8 valves.").refine(
+    (n) => n % 8 === 0,
+    { message: "Number of valves must be a multiple of 8." }
+  ),
 });
 
 type PatternGeneratorProps = {
@@ -211,7 +220,7 @@ export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
                     <FormItem>
                       <FormLabel className="text-foreground/80">Number of Valves</FormLabel>
                       <FormControl>
-                        <Input type="number" {...field} className="bg-background/50 border-primary/20 focus:ring-primary" />
+                        <Input type="number" {...field} className="bg-background/50 border-primary/20 focus:ring-primary" step="8" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -246,7 +255,7 @@ export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
                     <FormItem>
                       <FormLabel className="text-foreground/80">Number of Valves</FormLabel>
                       <FormControl>
-                        <Input type="number" {...field} className="bg-background/50 border-primary/20 focus:ring-primary" />
+                        <Input type="number" {...field} className="bg-background/50 border-primary/20 focus:ring-primary" step="8" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -281,7 +290,7 @@ export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
                     <FormItem>
                       <FormLabel className="text-foreground/80">Number of Valves</FormLabel>
                       <FormControl>
-                        <Input type="number" {...field} className="bg-background/50 border-primary/20 focus:ring-primary" />
+                        <Input type="number" {...field} className="bg-background/50 border-primary/20 focus:ring-primary" step="8" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

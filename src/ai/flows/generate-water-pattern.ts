@@ -21,7 +21,6 @@ const GenerateWaterPatternOutputSchema = z.object({
   patternData: z
     .array(z.array(z.boolean()))
     .describe('A 2D array representing the water curtain pattern. Each inner array represents a column of valves, and each boolean represents whether the valve is open (true) or closed (false).'),
-  esp32Code: z.string().describe('The generated ESP32 code to control the water curtain.'),
 });
 export type GenerateWaterPatternOutput = z.infer<typeof GenerateWaterPatternOutputSchema>;
 
@@ -38,20 +37,11 @@ const patternPrompt = ai.definePrompt({
   Based on the text prompt provided by the user, generate a 2D array representing the water curtain pattern. Each inner array represents a column of valves, and each boolean represents whether the valve is open (true) or closed (false).
   The water curtain has {{numValves}} valves.
   The generated pattern should be visually appealing and suitable for display on a water curtain.
+  The number of inner arrays determines the duration of the animation. The number of booleans in each inner array should correspond to the number of valves.
 
   Text Prompt: {{{textPrompt}}}
   
-  Also generate the ESP32 code to control the water curtain based on the generated pattern. Use the following hardware pin definitions:
-  SHIFT_DATA_PIN    13
-  SHIFT_LATCH_PIN   12
-  SHIFT_CLOCK_PIN   14
-  LED_DATA_PIN      19
-  NUM_VALVES should be defined from the interface web
-  NUM_LEDS should be according the number valves
-
-  Ensure that the generated code is efficient and well-commented, and that it can be easily integrated into an ESP32 project.
-  
-  Return both the patternData and the esp32Code in the required JSON format.
+  Return the patternData in the required JSON format.
   `,
 });
 

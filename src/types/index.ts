@@ -2,7 +2,6 @@ export interface Pattern {
   id: string;
   name: string;
   patternData: boolean[][];
-  esp32Code: string;
-  source: 'text' | 'image';
+  source: 'text' | 'image' | 'svg';
   promptOrFile?: string;
 }

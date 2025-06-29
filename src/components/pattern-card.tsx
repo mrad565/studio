@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { LivePreviewDialog } from "./live-preview-dialog";
 import { PatternVisualizer } from "./pattern-visualizer";
 import type { Pattern } from "@/types";
-import { ImageIcon, TextIcon, Trash2 } from "lucide-react";
+import { FileCode, ImageIcon, TextIcon, Trash2 } from "lucide-react";
 
 type PatternCardProps = {
   pattern: Pattern;
@@ -15,6 +15,16 @@ type PatternCardProps = {
 
 export function PatternCard({ pattern, deletePattern }: PatternCardProps) {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
+  const getSourceIcon = () => {
+    switch(pattern.source) {
+      case 'image': return <ImageIcon className="h-4 w-4" />;
+      case 'svg': return <FileCode className="h-4 w-4" />;
+      case 'text':
+      default:
+        return <TextIcon className="h-4 w-4" />;
+    }
+  }
 
   return (
     <>
@@ -28,13 +38,13 @@ export function PatternCard({ pattern, deletePattern }: PatternCardProps) {
               <span className="sr-only">Delete pattern</span>
             </Button>
           <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
-            {pattern.source === 'image' ? <ImageIcon className="h-4 w-4" /> : <TextIcon className="h-4 w-4" />}
+            {getSourceIcon()}
             <span className="capitalize">{pattern.source}</span>
           </div>
         </CardHeader>
         <CardContent className="flex-grow flex items-center justify-center p-2">
             <div className="w-full aspect-square bg-background/50 rounded-md overflow-hidden border border-border">
-                <PatternVisualizer patternData={pattern.patternData} isStaticPreview={true} />
+                <PatternVisualizer patternData={pattern.patternData} isPlaying={false} />
             </div>
         </CardContent>
         <CardFooter className="p-4">

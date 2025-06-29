@@ -1,15 +1,14 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { cn } from "@/lib/utils";
 
 type PatternVisualizerProps = {
   patternData: boolean[][];
   speed?: number; // delay in ms
-  isStaticPreview?: boolean;
+  isPlaying: boolean;
 };
 
-export function PatternVisualizer({ patternData, speed = 100, isStaticPreview = false }: PatternVisualizerProps) {
+export function PatternVisualizer({ patternData, speed = 100, isPlaying }: PatternVisualizerProps) {
   const [currentColumn, setCurrentColumn] = useState(0);
   const requestRef = useRef<number>();
   const previousTimeRef = useRef<number>();
@@ -31,24 +30,38 @@ export function PatternVisualizer({ patternData, speed = 100, isStaticPreview = 
   };
 
   useEffect(() => {
-    if (isStaticPreview || numCols === 0) return;
-    
-    requestRef.current = requestAnimationFrame(animate);
+    if (isPlaying && numCols > 0) {
+      requestRef.current = requestAnimationFrame(animate);
+    } else {
+      if(requestRef.current) {
+        cancelAnimationFrame(requestRef.current);
+        requestRef.current = undefined;
+        previousTimeRef.current = undefined;
+      }
+    }
     
     return () => {
       if(requestRef.current) {
         cancelAnimationFrame(requestRef.current);
       }
-      previousTimeRef.current = undefined;
     };
-  }, [speed, patternData, isStaticPreview, numCols]);
+  }, [isPlaying, speed, patternData, numCols]);
+
+  useEffect(() => {
+    // Reset animation when pattern data changes
+    setCurrentColumn(0);
+    previousTimeRef.current = undefined;
+  }, [patternData]);
+
 
   if (numRows === 0) {
     return <div className="w-full h-full bg-transparent flex items-center justify-center text-muted-foreground text-xs">No pattern data</div>;
   }
   
-  if (isStaticPreview) {
+  // This logic is for the static preview in the PatternCard
+  if (!isPlaying) {
     const maxDim = Math.max(numRows, numCols);
+    // When paused, show a static grid representation of the whole pattern
     return (
         <div className="w-full h-full grid p-1" style={{ gridTemplateColumns: `repeat(${numCols}, 1fr)`, gridTemplateRows: `repeat(${numRows}, 1fr)`, gap: '1px' }}>
             {Array.from({ length: numRows }).map((_, rowIndex) => (
@@ -66,9 +79,10 @@ export function PatternVisualizer({ patternData, speed = 100, isStaticPreview = 
     );
   }
 
+  // This is for the live animated preview
   return (
     <div className="w-full h-full flex items-center justify-center">
-      <div className="flex flex-wrap justify-center gap-1.5">
+      <div className="flex flex-wrap justify-center gap-1.5" style={{width: `calc(${Math.ceil(Math.sqrt(numRows))} * (0.75rem + 4px))`}}>
         {Array.from({ length: numRows }).map((_, valveIndex) => (
           <div key={valveIndex} className="w-3 h-3 rounded-full transition-all duration-100"
             style={{

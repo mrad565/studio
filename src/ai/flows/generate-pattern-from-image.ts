@@ -21,7 +21,7 @@ const GeneratePatternFromImageInputSchema = z.object({
 export type GeneratePatternFromImageInput = z.infer<typeof GeneratePatternFromImageInputSchema>;
 
 const GeneratePatternFromImageOutputSchema = z.object({
-  patternData: z.string().describe('The generated pattern data as a string representation of a 2D array.'),
+  patternData: z.array(z.array(z.boolean())).describe('The generated pattern data as a 2D array of booleans.'),
 });
 export type GeneratePatternFromImageOutput = z.infer<typeof GeneratePatternFromImageOutputSchema>;
 
@@ -45,14 +45,8 @@ Thus, it is important to convert complex imagery to a low-resolution equivalent 
 Here is the photo:
 {{media url=photoDataUri}}
 
-Output the pattern data as a string representation of a 2D array, with each row representing a valve and each column representing a time slice.  Use '1' to represent water being on, and '0' for water being off.
-
-For example, if the water curtain had 4 valves and 4 time slices, the output might look like this:
-
-[ [0, 1, 0, 1],
-  [1, 0, 1, 0],
-  [0, 1, 0, 1],
-  [1, 0, 1, 0] ]`,
+Output the pattern data as a JSON 2D array of booleans. Each inner array represents a column of valves, and each boolean represents whether the valve is open (true) or closed (false).
+The number of inner arrays determines the duration of the animation. The number of booleans in each inner array should correspond to the number of valves.`,
 });
 
 const generatePatternFromImageFlow = ai.defineFlow(

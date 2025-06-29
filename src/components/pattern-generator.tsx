@@ -13,9 +13,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import type { Pattern } from "@/types";
-import { FileCode, ImageIcon, Loader2, Sparkles, TextIcon } from "lucide-react";
+import { FileCode, ImageIcon, Loader2, PenSquare, Sparkles, TextIcon } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "./ui/form";
+import { ManualPatternEditorDialog } from "./manual-pattern-editor-dialog";
 
 
 const textSchema = z.object({
@@ -40,6 +41,7 @@ type PatternGeneratorProps = {
 export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
   const [activeTab, setActiveTab] = useState("text");
   const [isLoading, setIsLoading] = useState(false);
+  const [isManualEditorOpen, setIsManualEditorOpen] = useState(false);
   const { toast } = useToast();
 
   const textForm = useForm<z.infer<typeof textSchema>>({
@@ -62,7 +64,7 @@ export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
     setIsLoading(true);
     try {
       const result = await generateWaterPattern(values);
-      if (result && result.patternData) {
+      if (result && result.patternData && result.patternData.length > 0 && result.patternData[0].length > 0) {
         addPattern({
           name: values.textPrompt.substring(0, 30) + (values.textPrompt.length > 30 ? "..." : ""),
           patternData: result.patternData,
@@ -161,25 +163,29 @@ export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
   };
 
   return (
+    <>
     <Card className="bg-card/50 border-primary/20 shadow-lg shadow-primary/10">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-primary font-headline">
           <Sparkles className="h-6 w-6" />
           Pattern Generator
         </CardTitle>
-        <CardDescription>Create waterfall designs from text, images, or SVGs with AI.</CardDescription>
+        <CardDescription>Create waterfall designs from text, images, SVGs, or from scratch.</CardDescription>
       </CardHeader>
       <CardContent>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-3 bg-background/50 border border-primary/20">
+          <TabsList className="grid w-full grid-cols-4 bg-background/50 border border-primary/20">
             <TabsTrigger value="text" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary data-[state=active]:shadow-inner data-[state=active]:shadow-primary/10 gap-2">
-              <TextIcon /> From Text
+              <TextIcon /> Text
             </TabsTrigger>
             <TabsTrigger value="image" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary data-[state=active]:shadow-inner data-[state=active]:shadow-primary/10 gap-2">
-              <ImageIcon /> From Image
+              <ImageIcon /> Image
             </TabsTrigger>
             <TabsTrigger value="svg" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary data-[state=active]:shadow-inner data-[state=active]:shadow-primary/10 gap-2">
-              <FileCode /> From SVG
+              <FileCode /> SVG
+            </TabsTrigger>
+            <TabsTrigger value="manual" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary data-[state=active]:shadow-inner data-[state=active]:shadow-primary/10 gap-2">
+                <PenSquare /> Manual
             </TabsTrigger>
           </TabsList>
           <TabsContent value="text" className="mt-6">
@@ -287,8 +293,26 @@ export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
               </form>
             </Form>
           </TabsContent>
+          <TabsContent value="manual" className="mt-6">
+            <div className="flex flex-col items-center justify-center space-y-4 text-center p-8 border-2 border-dashed border-primary/20 rounded-lg bg-card/20 h-full">
+                <h3 className="text-lg font-semibold text-foreground">Create Your Own Pattern</h3>
+                <p className="text-muted-foreground">
+                    Use the grid editor to design a custom water curtain pattern from scratch.
+                </p>
+                <Button onClick={() => setIsManualEditorOpen(true)} className="bg-primary/80 hover:bg-primary text-primary-foreground font-bold">
+                    Open Manual Editor
+                </Button>
+            </div>
+          </TabsContent>
         </Tabs>
       </CardContent>
     </Card>
+    <ManualPatternEditorDialog
+        isOpen={isManualEditorOpen}
+        setIsOpen={setIsManualEditorOpen}
+        addPattern={addPattern}
+        initialNumValves={textForm.getValues("numValves")}
+    />
+    </>
   );
 }

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { LivePreviewDialog } from "./live-preview-dialog";
 import { PatternVisualizer } from "./pattern-visualizer";
 import type { Pattern } from "@/types";
-import { FileCode, ImageIcon, TextIcon, Trash2 } from "lucide-react";
+import { FileCode, ImageIcon, TextIcon, Trash2, PenSquare } from "lucide-react";
 
 type PatternCardProps = {
   pattern: Pattern;
@@ -20,6 +20,7 @@ export function PatternCard({ pattern, deletePattern }: PatternCardProps) {
     switch(pattern.source) {
       case 'image': return <ImageIcon className="h-4 w-4" />;
       case 'svg': return <FileCode className="h-4 w-4" />;
+      case 'manual': return <PenSquare className="h-4 w-4" />;
       case 'text':
       default:
         return <TextIcon className="h-4 w-4" />;

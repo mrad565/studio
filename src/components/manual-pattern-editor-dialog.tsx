@@ -38,6 +38,9 @@ export function ManualPatternEditorDialog({
   const [grid, setGrid] = useState<boolean[][]>([]);
   const { toast } = useToast();
 
+  const [isMouseDown, setIsMouseDown] = useState(false);
+  const [drawMode, setDrawMode] = useState<'draw' | 'erase' | null>(null);
+
   useEffect(() => {
     if (isOpen) {
         setCols(initialNumValves);
@@ -52,11 +55,40 @@ export function ManualPatternEditorDialog({
     setGrid(Array.from({ length: safeRows }, () => Array(safeCols).fill(false)));
   }, [rows, cols, isOpen]);
 
-  const handleCellClick = (rowIndex: number, colIndex: number) => {
+  // Global mouse up handler to stop drawing
+  useEffect(() => {
+    const handleMouseUp = () => {
+        setIsMouseDown(false);
+        setDrawMode(null);
+    };
+
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+        window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
+  
+  const handleCellMouseDown = (rowIndex: number, colIndex: number) => {
+    setIsMouseDown(true);
     const newGrid = grid.map((row) => [...row]);
-    newGrid[rowIndex][colIndex] = !newGrid[rowIndex][colIndex];
+    const newCellState = !newGrid[rowIndex][colIndex];
+    newGrid[rowIndex][colIndex] = newCellState;
     setGrid(newGrid);
+    setDrawMode(newCellState ? 'draw' : 'erase');
   };
+
+  const handleCellMouseEnter = (rowIndex: number, colIndex: number) => {
+    if (!isMouseDown || !drawMode) return;
+
+    const newGrid = grid.map((row) => [...row]);
+    const shouldBeDrawn = drawMode === 'draw';
+    
+    if (newGrid[rowIndex][colIndex] !== shouldBeDrawn) {
+        newGrid[rowIndex][colIndex] = shouldBeDrawn;
+        setGrid(newGrid);
+    }
+  };
+
 
   const handleSave = () => {
     if (!name.trim()) {
@@ -95,7 +127,7 @@ export function ManualPatternEditorDialog({
         <DialogHeader>
           <DialogTitle className="text-primary font-headline text-2xl">Manual Pattern Editor</DialogTitle>
           <DialogDescription>
-            Click the cells to create your own pattern. Define the dimensions and give it a name.
+            Click and drag to create your own pattern. Define the dimensions and give it a name.
           </DialogDescription>
         </DialogHeader>
         
@@ -126,12 +158,20 @@ export function ManualPatternEditorDialog({
           </div>
           <div className="md:col-span-2 bg-card/50 rounded-lg p-2 border border-border aspect-video">
             <ScrollArea className="w-full h-full">
-              <div className="grid gap-px p-1" style={gridStyles}>
+              <div
+                className="grid gap-px p-1"
+                style={gridStyles}
+                onMouseLeave={() => setIsMouseDown(false)}
+              >
                 {grid.map((row, rowIndex) =>
                   row.map((cell, colIndex) => (
                     <button
                       key={`${rowIndex}-${colIndex}`}
-                      onClick={() => handleCellClick(rowIndex, colIndex)}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        handleCellMouseDown(rowIndex, colIndex);
+                      }}
+                      onMouseEnter={() => handleCellMouseEnter(rowIndex, colIndex)}
                       className={`w-full aspect-square rounded-sm transition-colors ${
                         cell ? "bg-primary hover:bg-primary/80" : "bg-background hover:bg-border"
                       }`}

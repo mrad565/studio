@@ -11,10 +11,10 @@ import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
 const GeneratePatternFromSvgInputSchema = z.object({
-  svgDataUri: z
+  svgData: z
     .string()
     .describe(
-      "An SVG to use as a pattern, as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'."
+      "The raw string content of an SVG file to use as a pattern."
     ),
   numValves: z.number().describe('The number of valves in the water curtain.'),
 });
@@ -37,13 +37,13 @@ const prompt = ai.definePrompt({
 
 The water curtain has {{{numValves}}} valves.
 
-You will receive an SVG file and must convert its vector graphics into a pattern suitable for display on the water curtain.
+You will receive an SVG file content and must convert its vector graphics into a pattern suitable for display on the water curtain.
 
 Consider the limitations of the water curtain when generating the pattern. It has a limited resolution, with the number of valves specified by the user.
 Thus, it is important to convert the vector image to a low-resolution equivalent appropriate for the output.
 
-Here is the SVG:
-{{media url=svgDataUri}}
+Here is the SVG content:
+{{{svgData}}}
 
 Output the pattern data as a JSON 2D array of booleans. Each inner array represents a column of valves, and each boolean represents whether the valve is open (true) or closed (false).
 The number of inner arrays determines the duration of the animation. The number of booleans in each inner array should correspond to the number of valves.`,

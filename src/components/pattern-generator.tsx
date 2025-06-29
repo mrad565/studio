@@ -90,6 +90,14 @@ export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
       reader.onerror = error => reject(error);
     });
 
+  const toText = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsText(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = (error) => reject(error);
+    });
+
   const handleImageSubmit = async (values: z.infer<typeof imageSchema>) => {
     setIsLoading(true);
     try {
@@ -125,10 +133,10 @@ export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
     setIsLoading(true);
     try {
       const file = values.svg[0];
-      const svgDataUri = await toBase64(file);
+      const svgData = await toText(file);
 
       const result = await generatePatternFromSvg({
-        svgDataUri,
+        svgData,
         numValves: values.numValves,
       });
 

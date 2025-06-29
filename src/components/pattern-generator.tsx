@@ -4,23 +4,132 @@ import { useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { generatePatternFromImage } from "@/ai/flows/generate-pattern-from-image";
-import { generatePatternFromSvg } from "@/ai/flows/generate-pattern-from-svg";
-import { generateWaterPattern } from "@/ai/flows/generate-water-pattern";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import type { Pattern } from "@/types";
-import { FileCode, ImageIcon, Loader2, PenSquare, Sparkles, TextIcon } from "lucide-react";
+import { FileCode, ImageIcon, Loader2, PenSquare, Settings2, TextIcon } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "./ui/form";
 import { ManualPatternEditorDialog } from "./manual-pattern-editor-dialog";
 
+// --- Algorithmic Pattern Generators ---
+
+function canvasToPattern(canvas: HTMLCanvasElement): boolean[][] {
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) throw new Error('Could not get canvas context');
+    
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+    const pattern: boolean[][] = [];
+
+    for (let y = 0; y < canvas.height; y++) {
+        const row: boolean[] = [];
+        for (let x = 0; x < canvas.width; x++) {
+            const index = (y * canvas.width + x) * 4;
+            const alpha = data[index + 3];
+            // If a pixel is more than 50% opaque, consider it "on"
+            row.push(alpha > 128);
+        }
+        pattern.push(row);
+    }
+    // Reverse the pattern so the top of the source is emitted first by the valves.
+    return pattern.reverse();
+}
+
+function processImage(file: File, numValves: number): Promise<boolean[][]> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            if (!e.target?.result) return reject(new Error("Failed to read file"));
+            const img = new Image();
+            img.onload = () => {
+                const aspectRatio = img.height / img.width;
+                const height = Math.max(1, Math.round(numValves * aspectRatio));
+
+                const canvas = document.createElement('canvas');
+                canvas.width = numValves;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) return reject(new Error('Could not get canvas context'));
+                
+                ctx.drawImage(img, 0, 0, numValves, height);
+                resolve(canvasToPattern(canvas));
+            };
+            img.onerror = reject;
+            img.src = e.target.result as string;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+function processSvg(svgString: string, numValves: number): Promise<boolean[][]> {
+    return new Promise((resolve, reject) => {
+        const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(svgBlob);
+        
+        const img = new Image();
+        img.onload = () => {
+            const aspectRatio = img.height / img.width;
+            const height = Math.max(1, Math.round(numValves * aspectRatio));
+
+            const canvas = document.createElement('canvas');
+            canvas.width = numValves;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return reject(new Error('Could not get canvas context'));
+
+            ctx.drawImage(img, 0, 0, numValves, height);
+            URL.revokeObjectURL(url);
+            resolve(canvasToPattern(canvas));
+        };
+        img.onerror = (err) => {
+            URL.revokeObjectURL(url);
+            reject(err);
+        };
+        img.src = url;
+    });
+}
+
+function processText(text: string, numValves: number): Promise<boolean[][]> {
+    return new Promise((resolve, reject) => {
+        const PADDING = 8;
+        const FONT_SIZE = numValves;
+
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return reject(new Error('Could not get canvas context'));
+
+        ctx.font = `${FONT_SIZE}px "Space Grotesk"`;
+        const textMetrics = ctx.measureText(text);
+        
+        const textWidth = textMetrics.width;
+        const finalFontSize = Math.min(FONT_SIZE, (numValves - PADDING) * FONT_SIZE / textWidth);
+        
+        ctx.font = `${finalFontSize}px "Space Grotesk"`;
+        const finalMetrics = ctx.measureText(text);
+        const finalHeight = finalMetrics.actualBoundingBoxAscent + finalMetrics.actualBoundingBoxDescent;
+
+        canvas.width = numValves;
+        canvas.height = Math.ceil(finalHeight) + PADDING;
+        
+        ctx.font = `${finalFontSize}px "Space Grotesk"`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = 'black'; 
+        ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+        
+        resolve(canvasToPattern(canvas));
+    });
+}
+
+// --- End of Generators ---
 
 const textSchema = z.object({
-  textPrompt: z.string().min(10, "Prompt must be at least 10 characters long."),
+  textPrompt: z.string().min(1, "Prompt cannot be empty."),
   numValves: z.coerce.number().int().min(8, "Must have at least 8 valves.").refine(
     (n) => n % 8 === 0,
     { message: "Number of valves must be a multiple of 8." }
@@ -49,7 +158,7 @@ type PatternGeneratorProps = {
 
 export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
   const [activeTab, setActiveTab] = useState("text");
-  const [isLoading, setIsLoading] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [isManualEditorOpen, setIsManualEditorOpen] = useState(false);
   const { toast } = useToast();
 
@@ -70,36 +179,28 @@ export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
 
 
   const handleTextSubmit = async (values: z.infer<typeof textSchema>) => {
-    setIsLoading(true);
+    setIsGenerating(true);
     try {
-      const result = await generateWaterPattern(values);
-      if (result && result.patternData && result.patternData.length > 0 && result.patternData[0].length > 0) {
+      const result = await processText(values.textPrompt, values.numValves);
+      if (result && result.length > 0 && result[0].length > 0) {
         addPattern({
           name: values.textPrompt.substring(0, 30) + (values.textPrompt.length > 30 ? "..." : ""),
-          patternData: result.patternData,
+          patternData: result,
           source: 'text',
           promptOrFile: values.textPrompt,
         });
         toast({ title: "Success", description: "New text pattern generated!" });
         textForm.reset({ ...values, textPrompt: "" });
       } else {
-        throw new Error("Invalid response from AI");
+        throw new Error("Failed to generate pattern from text");
       }
     } catch (error) {
       console.error(error);
       toast({ variant: "destructive", title: "Error", description: "Failed to generate pattern from text." });
     } finally {
-      setIsLoading(false);
+      setIsGenerating(false);
     }
   };
-
-  const toBase64 = (file: File): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = error => reject(error);
-    });
 
   const toText = (file: File): Promise<string> =>
     new Promise((resolve, reject) => {
@@ -110,64 +211,55 @@ export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
     });
 
   const handleImageSubmit = async (values: z.infer<typeof imageSchema>) => {
-    setIsLoading(true);
+    setIsGenerating(true);
     try {
       const file = values.image[0];
-      const photoDataUri = await toBase64(file);
+      const result = await processImage(file, values.numValves);
 
-      const result = await generatePatternFromImage({
-        photoDataUri,
-        numValves: values.numValves,
-      });
-
-      if (result && result.patternData) {
+      if (result) {
         addPattern({
           name: file.name,
-          patternData: result.patternData,
+          patternData: result,
           source: 'image',
           promptOrFile: file.name,
         });
         toast({ title: "Success", description: "New image pattern generated!" });
         imageForm.reset({ ...values, image: null });
       } else {
-        throw new Error("Invalid response from AI");
+        throw new Error("Failed to process image");
       }
     } catch (error) {
       console.error(error);
       toast({ variant: "destructive", title: "Error", description: "Failed to generate pattern from image." });
     } finally {
-      setIsLoading(false);
+      setIsGenerating(false);
     }
   };
 
   const handleSvgSubmit = async (values: z.infer<typeof svgSchema>) => {
-    setIsLoading(true);
+    setIsGenerating(true);
     try {
       const file = values.svg[0];
       const svgData = await toText(file);
+      const result = await processSvg(svgData, values.numValves);
 
-      const result = await generatePatternFromSvg({
-        svgData,
-        numValves: values.numValves,
-      });
-
-      if (result && result.patternData) {
+      if (result) {
         addPattern({
           name: file.name,
-          patternData: result.patternData,
+          patternData: result,
           source: 'svg',
           promptOrFile: file.name,
         });
         toast({ title: "Success", description: "New SVG pattern generated!" });
         svgForm.reset({ ...values, svg: null });
       } else {
-        throw new Error("Invalid response from AI");
+        throw new Error("Failed to process SVG");
       }
     } catch (error) {
       console.error(error);
       toast({ variant: "destructive", title: "Error", description: "Failed to generate pattern from SVG." });
     } finally {
-      setIsLoading(false);
+      setIsGenerating(false);
     }
   };
 
@@ -176,7 +268,7 @@ export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
     <Card className="bg-card/50 border-primary/20 shadow-lg shadow-primary/10">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-primary font-headline">
-          <Sparkles className="h-6 w-6" />
+          <Settings2 className="h-6 w-6" />
           Pattern Generator
         </CardTitle>
         <CardDescription>Create waterfall designs from text, images, SVGs, or from scratch.</CardDescription>
@@ -207,7 +299,7 @@ export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
                     <FormItem>
                       <FormLabel className="text-foreground/80">Text Prompt</FormLabel>
                       <FormControl>
-                        <Textarea placeholder="e.g., a shooting star, geometric shapes..." {...field} className="bg-background/50 border-primary/20 focus:ring-primary min-h-[100px]" />
+                        <Textarea placeholder="e.g., Hello World, AquaGlyph..." {...field} className="bg-background/50 border-primary/20 focus:ring-primary min-h-[100px]" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -226,8 +318,8 @@ export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
                     </FormItem>
                   )}
                 />
-                <Button type="submit" disabled={isLoading} className="w-full bg-accent hover:bg-accent/80 text-black font-bold text-lg py-6">
-                  {isLoading ? <Loader2 className="animate-spin" /> : "Generate with AI"}
+                <Button type="submit" disabled={isGenerating} className="w-full bg-accent hover:bg-accent/80 text-black font-bold text-lg py-6">
+                  {isGenerating ? <Loader2 className="animate-spin" /> : "Generate Pattern"}
                 </Button>
               </form>
             </Form>
@@ -261,8 +353,8 @@ export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
                     </FormItem>
                   )}
                 />
-                <Button type="submit" disabled={isLoading} className="w-full bg-accent hover:bg-accent/80 text-black font-bold text-lg py-6">
-                  {isLoading ? <Loader2 className="animate-spin" /> : "Generate with AI"}
+                <Button type="submit" disabled={isGenerating} className="w-full bg-accent hover:bg-accent/80 text-black font-bold text-lg py-6">
+                  {isGenerating ? <Loader2 className="animate-spin" /> : "Generate Pattern"}
                 </Button>
               </form>
             </Form>
@@ -296,8 +388,8 @@ export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
                     </FormItem>
                   )}
                 />
-                <Button type="submit" disabled={isLoading} className="w-full bg-accent hover:bg-accent/80 text-black font-bold text-lg py-6">
-                  {isLoading ? <Loader2 className="animate-spin" /> : "Generate with AI"}
+                <Button type="submit" disabled={isGenerating} className="w-full bg-accent hover:bg-accent/80 text-black font-bold text-lg py-6">
+                  {isGenerating ? <Loader2 className="animate-spin" /> : "Generate Pattern"}
                 </Button>
               </form>
             </Form>

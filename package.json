@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev --turbopack -p 9002",
     "build": "next build",
+    "build:esp32": "next build && node scripts/prepare_for_esp32.js",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit"
@@ -53,6 +54,8 @@
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "cheerio": "^1.0.0-rc.12",
+    "fs-extra": "^11.2.0",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
     "typescript": "^5"

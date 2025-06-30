@@ -68,31 +68,78 @@ function processImage(file: File, numValves: number): Promise<boolean[][]> {
 
 function processSvg(svgString: string, numValves: number): Promise<boolean[][]> {
     return new Promise((resolve, reject) => {
-        const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-        const url = URL.createObjectURL(svgBlob);
-        
-        const img = new Image();
-        img.onload = () => {
-            const aspectRatio = img.height / img.width;
+        try {
+            const parser = new DOMParser();
+            const svgDoc = parser.parseFromString(svgString, "image/svg+xml");
+            const svgElement = svgDoc.documentElement;
+
+            if (svgElement.querySelector('parsererror') || svgElement.tagName.toLowerCase() === 'html') {
+                 return reject(new Error("Failed to parse SVG. The file might be corrupt or not a valid SVG."));
+            }
+
+            const viewBox = svgElement.getAttribute('viewBox');
+            let aspectRatio: number;
+
+            if (viewBox) {
+                const parts = viewBox.split(/[ ,]+/);
+                if (parts.length === 4) {
+                    const vbWidth = parseFloat(parts[2]);
+                    const vbHeight = parseFloat(parts[3]);
+                    aspectRatio = (vbWidth > 0 && vbHeight > 0) ? (vbHeight / vbWidth) : 1;
+                } else {
+                    aspectRatio = 1; 
+                }
+            } else {
+                const widthAttr = svgElement.getAttribute('width');
+                const heightAttr = svgElement.getAttribute('height');
+                if (widthAttr && heightAttr) {
+                    const w = parseFloat(widthAttr);
+                    const h = parseFloat(heightAttr);
+                    aspectRatio = (w > 0 && h > 0) ? h / w : 1;
+                } else {
+                    aspectRatio = 1;
+                }
+            }
+             if (isNaN(aspectRatio)) aspectRatio = 1;
+
             const height = Math.max(1, Math.round(numValves * aspectRatio));
 
-            const canvas = document.createElement('canvas');
-            canvas.width = numValves;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) return reject(new Error('Could not get canvas context'));
+            svgElement.setAttribute('width', `${numValves}px`);
+            svgElement.setAttribute('height', `${height}px`);
+            svgElement.setAttribute('preserveAspectRatio', 'none');
 
-            ctx.drawImage(img, 0, 0, numValves, height);
-            URL.revokeObjectURL(url);
-            resolve(canvasToPattern(canvas));
-        };
-        img.onerror = (err) => {
-            URL.revokeObjectURL(url);
-            reject(err);
-        };
-        img.src = url;
+            const serializer = new XMLSerializer();
+            const sizedSvgString = serializer.serializeToString(svgElement);
+
+            const svgBlob = new Blob([sizedSvgString], { type: 'image/svg+xml;charset=utf-8' });
+            const url = URL.createObjectURL(svgBlob);
+            
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = numValves;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                    URL.revokeObjectURL(url);
+                    return reject(new Error('Could not get canvas context'));
+                }
+
+                ctx.drawImage(img, 0, 0, numValves, height);
+                URL.revokeObjectURL(url);
+                resolve(canvasToPattern(canvas));
+            };
+            img.onerror = (err) => {
+                URL.revokeObjectURL(url);
+                reject(err);
+            };
+            img.src = url;
+        } catch (error) {
+            reject(error);
+        }
     });
 }
+
 
 function processText(text: string, numValves: number): Promise<boolean[][]> {
     return new Promise((resolve, reject) => {
@@ -255,9 +302,9 @@ export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
       } else {
         throw new Error("Failed to process SVG");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast({ variant: "destructive", title: "Error", description: "Failed to generate pattern from SVG." });
+      toast({ variant: "destructive", title: "Error generating from SVG", description: error.message || "Please check the file and try again." });
     } finally {
       setIsGenerating(false);
     }

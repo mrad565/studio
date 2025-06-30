@@ -19,7 +19,6 @@ type Droplet = {
 };
 
 const GRAVITY = 0.3;
-const VALVE_SPACING = 12;
 const DROPLET_BASE_LENGTH = 15;
 const DROPLET_BASE_SPEED = 4;
 
@@ -46,11 +45,33 @@ export function PatternVisualizer({ patternData, speed = 100, isPlaying, color =
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+    
+    // Set canvas resolution to match its display size for high-DPI rendering.
+    const parent = canvas.parentElement;
+    if (parent) {
+      const { width, height } = parent.getBoundingClientRect();
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+    }
 
     let droplets: Droplet[] = [];
 
-    const valveWidth = numValves * VALVE_SPACING;
-    const startX = (canvas.width - valveWidth) / 2;
+    // --- DYNAMIC VALVE SPACING LOGIC ---
+    let startX: number;
+    let valveSpacing: number;
+    const padding = canvas.width * 0.1; // Use 10% of canvas width as padding
+    const drawableWidth = canvas.width - padding;
+
+    if (numValves > 1) {
+        valveSpacing = drawableWidth / (numValves - 1);
+        startX = padding / 2;
+    } else {
+        valveSpacing = 0;
+        startX = canvas.width / 2;
+    }
+    // --- END DYNAMIC LOGIC ---
 
     const tick = (time: number) => {
       // Clear canvas
@@ -65,7 +86,7 @@ export function PatternVisualizer({ patternData, speed = 100, isPlaying, color =
           currentPatternStep.forEach((valveOn, valveIndex) => {
             if (valveOn) {
               droplets.push({
-                x: startX + valveIndex * VALVE_SPACING,
+                x: startX + valveIndex * valveSpacing, // Use dynamic spacing
                 y: 0,
                 vy: DROPLET_BASE_SPEED + Math.random() * 2,
                 len: DROPLET_BASE_LENGTH + Math.random() * 5,
@@ -105,7 +126,7 @@ export function PatternVisualizer({ patternData, speed = 100, isPlaying, color =
       // Draw valves
       ctx.fillStyle = color;
       for (let i = 0; i < numValves; i++) {
-        const x = startX + i * VALVE_SPACING;
+        const x = startX + i * valveSpacing; // Use dynamic spacing
         ctx.beginPath();
         ctx.arc(x, 5, 3, 0, Math.PI * 2);
         ctx.fill();
@@ -159,7 +180,7 @@ export function PatternVisualizer({ patternData, speed = 100, isPlaying, color =
   // Live animated preview using canvas
   return (
     <div className="w-full h-full flex items-center justify-center">
-       <canvas ref={canvasRef} width="300" height="150" className="w-full h-full"></canvas>
+       <canvas ref={canvasRef} className="w-full h-full"></canvas>
     </div>
   );
 }

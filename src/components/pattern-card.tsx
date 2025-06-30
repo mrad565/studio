@@ -29,7 +29,7 @@ export function PatternCard({ pattern, deletePattern }: PatternCardProps) {
 
   return (
     <>
-      <Card className="h-full flex flex-col justify-between bg-card/50 border-primary/20 hover:border-primary/50 transition-colors shadow-md hover:shadow-primary/20 hover:shadow-lg">
+      <Card className="h-full flex flex-col justify-between bg-card border-border hover:border-primary transition-colors shadow-xl shadow-black/25">
         <CardHeader className="relative">
           <CardTitle className="flex items-start justify-between">
             <span className="truncate text-base font-semibold text-foreground pr-8">{pattern.name}</span>
@@ -49,7 +49,7 @@ export function PatternCard({ pattern, deletePattern }: PatternCardProps) {
             </div>
         </CardContent>
         <CardFooter className="p-4">
-          <Button onClick={() => setIsPreviewOpen(true)} className="w-full bg-primary/20 hover:bg-primary/30 text-primary font-bold border border-primary/30">
+          <Button onClick={() => setIsPreviewOpen(true)} className="w-full" variant="outline">
             Live Preview
           </Button>
         </CardFooter>

@@ -103,20 +103,20 @@ function processText(text: string, numValves: number): Promise<boolean[][]> {
         const ctx = canvas.getContext('2d');
         if (!ctx) return reject(new Error('Could not get canvas context'));
 
-        ctx.font = `${FONT_SIZE}px "Space Grotesk"`;
+        ctx.font = `${FONT_SIZE}px "Inter"`;
         const textMetrics = ctx.measureText(text);
         
         const textWidth = textMetrics.width;
         const finalFontSize = Math.min(FONT_SIZE, (numValves - PADDING) * FONT_SIZE / textWidth);
         
-        ctx.font = `${finalFontSize}px "Space Grotesk"`;
+        ctx.font = `${finalFontSize}px "Inter"`;
         const finalMetrics = ctx.measureText(text);
         const finalHeight = finalMetrics.actualBoundingBoxAscent + finalMetrics.actualBoundingBoxDescent;
 
         canvas.width = numValves;
         canvas.height = Math.ceil(finalHeight) + PADDING;
         
-        ctx.font = `${finalFontSize}px "Space Grotesk"`;
+        ctx.font = `${finalFontSize}px "Inter"`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillStyle = 'black'; 
@@ -265,7 +265,7 @@ export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
 
   return (
     <>
-    <Card className="bg-card/50 border-primary/20 shadow-lg shadow-primary/10">
+    <Card className="bg-card border-border shadow-2xl shadow-black/25">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-primary font-headline">
           <Settings2 className="h-6 w-6" />
@@ -275,17 +275,17 @@ export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
       </CardHeader>
       <CardContent>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-4 bg-background/50 border border-primary/20">
-            <TabsTrigger value="text" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary data-[state=active]:shadow-inner data-[state=active]:shadow-primary/10 gap-2">
+          <TabsList className="grid w-full grid-cols-4 bg-secondary">
+            <TabsTrigger value="text" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-lg gap-2">
               <TextIcon /> Text
             </TabsTrigger>
-            <TabsTrigger value="image" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary data-[state=active]:shadow-inner data-[state=active]:shadow-primary/10 gap-2">
+            <TabsTrigger value="image" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-lg gap-2">
               <ImageIcon /> Image
             </TabsTrigger>
-            <TabsTrigger value="svg" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary data-[state=active]:shadow-inner data-[state=active]:shadow-primary/10 gap-2">
+            <TabsTrigger value="svg" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-lg gap-2">
               <FileCode /> SVG
             </TabsTrigger>
-            <TabsTrigger value="manual" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary data-[state=active]:shadow-inner data-[state=active]:shadow-primary/10 gap-2">
+            <TabsTrigger value="manual" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-lg gap-2">
                 <PenSquare /> Manual
             </TabsTrigger>
           </TabsList>
@@ -297,9 +297,9 @@ export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
                   name="textPrompt"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-foreground/80">Text Prompt</FormLabel>
+                      <FormLabel className="text-muted-foreground">Text Prompt</FormLabel>
                       <FormControl>
-                        <Textarea placeholder="e.g., Hello World, AquaGlyph..." {...field} className="bg-background/50 border-primary/20 focus:ring-primary min-h-[100px]" />
+                        <Textarea placeholder="e.g., Hello World, AquaGlyph..." {...field} className="bg-input border-border focus:ring-primary min-h-[100px]" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -310,15 +310,15 @@ export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
                   name="numValves"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-foreground/80">Number of Valves</FormLabel>
+                      <FormLabel className="text-muted-foreground">Number of Valves</FormLabel>
                       <FormControl>
-                        <Input type="number" {...field} className="bg-background/50 border-primary/20 focus:ring-primary" step="8" />
+                        <Input type="number" {...field} className="bg-input border-border focus:ring-primary" step="8" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                <Button type="submit" disabled={isGenerating} className="w-full bg-accent hover:bg-accent/80 text-black font-bold text-lg py-6">
+                <Button type="submit" disabled={isGenerating} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-lg py-6">
                   {isGenerating ? <Loader2 className="animate-spin" /> : "Generate Pattern"}
                 </Button>
               </form>
@@ -332,9 +332,9 @@ export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
                     name="image"
                     render={({ field: { onChange, value, ...rest } }) => (
                       <FormItem>
-                         <FormLabel className="text-foreground/80">Upload Image</FormLabel>
+                         <FormLabel className="text-muted-foreground">Upload Image</FormLabel>
                          <FormControl>
-                           <Input type="file" accept="image/*" onChange={(e) => onChange(e.target.files)} {...rest} className="text-foreground/80 file:text-accent file:font-bold bg-background/50 border-primary/20 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-accent/20 file:text-accent hover:file:bg-accent/30" />
+                           <Input type="file" accept="image/*" onChange={(e) => onChange(e.target.files)} {...rest} className="text-muted-foreground file:text-primary file:font-bold bg-input border-border file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-primary/20 hover:file:bg-primary/30" />
                          </FormControl>
                          <FormMessage />
                       </FormItem>
@@ -345,15 +345,15 @@ export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
                   name="numValves"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-foreground/80">Number of Valves</FormLabel>
+                      <FormLabel className="text-muted-foreground">Number of Valves</FormLabel>
                       <FormControl>
-                        <Input type="number" {...field} className="bg-background/50 border-primary/20 focus:ring-primary" step="8" />
+                        <Input type="number" {...field} className="bg-input border-border focus:ring-primary" step="8" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                <Button type="submit" disabled={isGenerating} className="w-full bg-accent hover:bg-accent/80 text-black font-bold text-lg py-6">
+                <Button type="submit" disabled={isGenerating} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-lg py-6">
                   {isGenerating ? <Loader2 className="animate-spin" /> : "Generate Pattern"}
                 </Button>
               </form>
@@ -367,9 +367,9 @@ export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
                     name="svg"
                     render={({ field: { onChange, value, ...rest } }) => (
                       <FormItem>
-                         <FormLabel className="text-foreground/80">Upload SVG</FormLabel>
+                         <FormLabel className="text-muted-foreground">Upload SVG</FormLabel>
                          <FormControl>
-                           <Input type="file" accept="image/svg+xml" onChange={(e) => onChange(e.target.files)} {...rest} className="text-foreground/80 file:text-accent file:font-bold bg-background/50 border-primary/20 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-accent/20 file:text-accent hover:file:bg-accent/30" />
+                           <Input type="file" accept="image/svg+xml" onChange={(e) => onChange(e.target.files)} {...rest} className="text-muted-foreground file:text-primary file:font-bold bg-input border-border file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-primary/20 hover:file:bg-primary/30" />
                          </FormControl>
                          <FormMessage />
                       </FormItem>
@@ -380,27 +380,27 @@ export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
                   name="numValves"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-foreground/80">Number of Valves</FormLabel>
+                      <FormLabel className="text-muted-foreground">Number of Valves</FormLabel>
                       <FormControl>
-                        <Input type="number" {...field} className="bg-background/50 border-primary/20 focus:ring-primary" step="8" />
+                        <Input type="number" {...field} className="bg-input border-border focus:ring-primary" step="8" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                <Button type="submit" disabled={isGenerating} className="w-full bg-accent hover:bg-accent/80 text-black font-bold text-lg py-6">
+                <Button type="submit" disabled={isGenerating} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-lg py-6">
                   {isGenerating ? <Loader2 className="animate-spin" /> : "Generate Pattern"}
                 </Button>
               </form>
             </Form>
           </TabsContent>
           <TabsContent value="manual" className="mt-6">
-            <div className="flex flex-col items-center justify-center space-y-4 text-center p-8 border-2 border-dashed border-primary/20 rounded-lg bg-card/20 h-full">
+            <div className="flex flex-col items-center justify-center space-y-4 text-center p-8 border-2 border-dashed border-border/50 rounded-lg bg-card/50 h-full">
                 <h3 className="text-lg font-semibold text-foreground">Create Your Own Pattern</h3>
                 <p className="text-muted-foreground">
                     Use the grid editor to design a custom water curtain pattern from scratch.
                 </p>
-                <Button onClick={() => setIsManualEditorOpen(true)} className="bg-primary/80 hover:bg-primary text-primary-foreground font-bold">
+                <Button onClick={() => setIsManualEditorOpen(true)} className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold">
                     Open Manual Editor
                 </Button>
             </div>

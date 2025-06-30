@@ -29,10 +29,11 @@ export function PatternVisualizer({ patternData, speed = 100, isPlaying, color =
   const lastTickTime = useRef<number>(0);
   const currentTimeStep = useRef<number>(0);
 
-  const reversedPatternData = useMemo(() => [...patternData].reverse(), [patternData]);
+  // The animation should play bottom-to-top, so we reverse the pattern data just for the animation.
+  const animationPattern = useMemo(() => [...patternData].reverse(), [patternData]);
 
-  const numTimeSteps = reversedPatternData.length;
-  const numValves = reversedPatternData[0]?.length || 0;
+  const numTimeSteps = patternData.length;
+  const numValves = patternData[0]?.length || 0;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -58,7 +59,8 @@ export function PatternVisualizer({ patternData, speed = 100, isPlaying, color =
       // Handle time step advancement
       if (time - lastTickTime.current > speed) {
         lastTickTime.current = time;
-        const currentPatternStep = reversedPatternData[currentTimeStep.current];
+        // Use the reversed pattern for the animation to play bottom-up
+        const currentPatternStep = animationPattern[currentTimeStep.current];
         if (currentPatternStep) {
           currentPatternStep.forEach((valveOn, valveIndex) => {
             if (valveOn) {
@@ -121,29 +123,30 @@ export function PatternVisualizer({ patternData, speed = 100, isPlaying, color =
         cancelAnimationFrame(animationFrameId.current);
       }
     };
-  }, [isPlaying, reversedPatternData, speed, numTimeSteps, numValves, color]);
+  }, [isPlaying, animationPattern, speed, numTimeSteps, numValves, color]);
   
   // Reset animation when pattern data changes
   useEffect(() => {
     currentTimeStep.current = 0;
-  }, [reversedPatternData]);
+  }, [animationPattern]);
 
   if (numTimeSteps === 0 || numValves === 0) {
     return <div className="w-full h-full bg-transparent flex items-center justify-center text-muted-foreground text-xs">No pattern data</div>;
   }
   
-  // Static preview grid
+  // Static preview grid - Renders the pattern data directly (top-to-bottom)
   if (!isPlaying) {
     const cssGridSafeTimeSteps = Math.max(1, numTimeSteps);
     const cssGridSafeNumValves = Math.max(1, numValves);
     return (
         <div className="w-full h-full grid p-1" style={{ gridTemplateColumns: `repeat(${cssGridSafeNumValves}, 1fr)`, gridTemplateRows: `repeat(${cssGridSafeTimeSteps}, 1fr)`, gap: '1px' }}>
-            {Array.from({ length: numTimeSteps }).map((_, timeIndex) => (
+            {/* Use patternData directly here for correct static display */}
+            {patternData.map((row, timeIndex) => (
                 <React.Fragment key={timeIndex}>
-                {Array.from({ length: numValves }).map((_, valveIndex) => (
+                {row.map((cell, valveIndex) => (
                     <div key={`${timeIndex}-${valveIndex}`} className="min-w-0 min-h-0" style={{
-                        backgroundColor: reversedPatternData[timeIndex]?.[valveIndex] ? color : 'hsl(var(--border) / 0.1)',
-                        boxShadow: reversedPatternData[timeIndex]?.[valveIndex] ? `0 0 1px ${color}` : 'none',
+                        backgroundColor: cell ? color : 'hsl(var(--border) / 0.1)',
+                        boxShadow: cell ? `0 0 1px ${color}` : 'none',
                         borderRadius: '1px'
                     }}></div>
                 ))}

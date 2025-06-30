@@ -35,8 +35,8 @@ function canvasToPattern(canvas: HTMLCanvasElement): boolean[][] {
         }
         pattern.push(row);
     }
-    // Reverse the pattern so the top of the source is emitted first by the valves.
-    return pattern.reverse();
+    // The pattern is read from the canvas top-to-bottom.
+    return pattern;
 }
 
 function processImage(file: File, numValves: number): Promise<boolean[][]> {

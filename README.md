@@ -1,4 +1,4 @@
-# Firebase Studio
+# Firebase Studio Mrad
 
 This is a NextJS starter in Firebase Studio.
 

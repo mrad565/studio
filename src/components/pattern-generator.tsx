@@ -58,10 +58,10 @@ function processImage(file: File, numValves: number): Promise<boolean[][]> {
                 ctx.drawImage(img, 0, 0, numValves, height);
                 resolve(canvasToPattern(canvas));
             };
-            img.onerror = reject;
+            img.onerror = () => reject(new Error("The selected image file could not be loaded. It may be corrupt or in an unsupported format."));
             img.src = e.target.result as string;
         };
-        reader.onerror = reject;
+        reader.onerror = () => reject(new Error("Failed to read the selected file."));
         reader.readAsDataURL(file);
     });
 }
@@ -129,13 +129,17 @@ function processSvg(svgString: string, numValves: number): Promise<boolean[][]> 
                 URL.revokeObjectURL(url);
                 resolve(canvasToPattern(canvas));
             };
-            img.onerror = (err) => {
+            img.onerror = () => {
                 URL.revokeObjectURL(url);
-                reject(err);
+                reject(new Error("The selected SVG file could not be rendered. It may be corrupt or contain unsupported features."));
             };
             img.src = url;
         } catch (error) {
-            reject(error);
+             if (error instanceof Error) {
+                reject(error);
+            } else {
+                reject(new Error("An unknown error occurred while processing the SVG."));
+            }
         }
     });
 }
@@ -241,9 +245,10 @@ export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
       } else {
         throw new Error("Failed to generate pattern from text");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast({ variant: "destructive", title: "Error", description: "Failed to generate pattern from text." });
+      const description = error.message || "Failed to generate pattern from text.";
+      toast({ variant: "destructive", title: "Error", description });
     } finally {
       setIsGenerating(false);
     }
@@ -275,9 +280,10 @@ export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
       } else {
         throw new Error("Failed to process image");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast({ variant: "destructive", title: "Error", description: "Failed to generate pattern from image." });
+      const description = error.message || "Failed to generate pattern from image.";
+      toast({ variant: "destructive", title: "Error", description });
     } finally {
       setIsGenerating(false);
     }
@@ -304,7 +310,8 @@ export function PatternGenerator({ addPattern }: PatternGeneratorProps) {
       }
     } catch (error: any) {
       console.error(error);
-      toast({ variant: "destructive", title: "Error generating from SVG", description: error.message || "Please check the file and try again." });
+      const description = error.message || "Please check the file and try again.";
+      toast({ variant: "destructive", title: "Error generating from SVG", description });
     } finally {
       setIsGenerating(false);
     }

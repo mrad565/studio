@@ -98,16 +98,28 @@ export function HardwareControls({ patterns }: HardwareControlsProps) {
         return;
     }
     setIsUploading(true);
+
+    const numValves = patterns[0]?.patternData[0]?.length || 0;
+    if (numValves === 0) {
+        toast({ variant: "destructive", title: "Invalid Pattern", description: "Cannot upload a pattern with zero valves." });
+        setIsUploading(false);
+        return;
+    }
+
+    // Send configuration first to allow ESP32 to re-initialize if needed
+    sendCommand({ action: "config", valves: numValves });
+    
     // Combine all patterns into a single giant pattern array
     const combinedPatternData = patterns.flatMap(p => p.patternData);
 
     sendCommand({ action: "load_pattern", pattern: combinedPatternData });
-    toast({ title: "Sequence Uploaded", description: `Sent ${patterns.length} patterns to the hardware.` });
+    toast({ title: "Sequence Uploaded", description: `Sent ${patterns.length} patterns (${numValves} valves) to the hardware.` });
     
     // Reset play state after upload
     if (isPlaying) {
       setIsPlaying(false);
-      sendCommand({ action: "pause" });
+      // Give ESP32 a moment to process config before pausing
+      setTimeout(() => sendCommand({ action: "pause" }), 100);
     }
 
     setTimeout(() => setIsUploading(false), 1000);

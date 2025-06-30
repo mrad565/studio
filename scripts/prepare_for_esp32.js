@@ -36,7 +36,7 @@ async function main() {
     console.log('\n✅ ESP32 preparation complete!');
     console.log('\nNext steps:');
     console.log('1. Open the `esp32` folder in Arduino IDE or PlatformIO.');
-    console.log('2. In `main.ino`, update WiFi credentials and GPIO pin configurations.');
+    console.log('2. In `main.ino`, update your WiFi credentials.');
     console.log('3. Upload the `data` folder to ESP32 SPIFFS.');
     console.log('4. Compile and upload the sketch to your ESP32.');
 }
@@ -57,7 +57,7 @@ function generateInoCode() {
      - FastLED
   2. Install the ESP32 SPIFFS upload tool:
      https://github.com/me-no-dev/arduino-esp32fs-plugin
-  3. Update the placeholders below (WiFi credentials, GPIO pins, NUM_VALVES).
+  3. Update your WiFi credentials below.
   4. Upload the 'data' directory to SPIFFS using "Tools > ESP32 Sketch Data Upload".
   5. Compile and upload this sketch.
 */
@@ -78,16 +78,11 @@ function generateInoCode() {
 const char* ssid = "YOUR_WIFI_SSID";
 const char* password = "YOUR_WIFI_PASSWORD";
 
-// -- Hardware Pins
-#define LATCH_PIN    5   // 74HC595 ST_CP (RCLK) - Pin 12
-#define CLOCK_PIN    18  // 74HC595 SH_CP (SRCLK) - Pin 11
-#define DATA_PIN     23  // 74HC595 DS (SER) - Pin 14
-#define LED_PIN      15  // Data pin for WS2812B LEDs
-
-// -- Curtain Configuration
-// IMPORTANT: This MUST match the 'Number of Valves' used to generate the patterns in the web UI.
-#define NUM_VALVES   16
-#define NUM_LEDS     NUM_VALVES
+// -- Hardware Pin Definitions
+#define LATCH_PIN    12  // 74HC595 Latch pin (ST_CP/RCLK)
+#define CLOCK_PIN    14  // 74HC595 Clock pin (SH_CP/SRCLK)
+#define DATA_PIN     13  // 74HC595 Data pin (DS/SER)
+#define LED_PIN      19  // WS2812B data pin
 
 // =================================================================
 // GLOBAL VARIABLES
@@ -95,20 +90,23 @@ const char* password = "YOUR_WIFI_PASSWORD";
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
 
+// -- Curtain Configuration (synced from web interface)
+int NUM_VALVES = 16; // Default, will be updated by UI
+int NUM_LEDS = 16;
+int BYTES_PER_ROW = 2;
+
 // Increase buffer size if you plan to use very long animations
 // Max rows = PATTERN_BUFFER_SIZE / (NUM_VALVES / 8)
-// Example: 4096 / (64 valves / 8 bytes) = 512 rows
 #define PATTERN_BUFFER_SIZE 4096 
 byte patternBuffer[PATTERN_BUFFER_SIZE];
+CRGB* leds = nullptr;
+
 int numPatternRows = 0;
 int currentPatternRow = 0;
 unsigned long lastUpdateTime = 0;
 int animationSpeed = 100; // Delay in ms
 bool isPlaying = false;
 const int BITS_PER_BYTE = 8;
-const int BYTES_PER_ROW = (NUM_VALVES + BITS_PER_BYTE - 1) / BITS_PER_BYTE;
-
-CRGB leds[NUM_LEDS];
 
 // =================================================================
 // HELPER FUNCTIONS
@@ -123,6 +121,18 @@ void writeShiftRegisters(byte rowData[]) {
     shiftOut(DATA_PIN, CLOCK_PIN, MSBFIRST, rowData[i]);
   }
   digitalWrite(LATCH_PIN, HIGH);
+}
+
+// Re-initializes LED strip - must be called after NUM_VALVES changes
+void setupLeds() {
+    if (leds != nullptr) {
+        delete[] leds;
+    }
+    leds = new CRGB[NUM_LEDS];
+    FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, NUM_LEDS);
+    FastLED.setBrightness(50);
+    for(int i = 0; i < NUM_LEDS; i++) { leds[i] = CRGB::Black; }
+    FastLED.show();
 }
 
 // Function to handle WebSocket events
@@ -144,7 +154,18 @@ void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventT
     Serial.print("Received action: ");
     Serial.println(action);
 
-    if (strcmp(action, "play") == 0) {
+    if (strcmp(action, "config") == 0) {
+        int newNumValves = doc["valves"];
+        if (newNumValves > 0 && newNumValves != NUM_VALVES) {
+            NUM_VALVES = newNumValves;
+            NUM_LEDS = newNumValves;
+            BYTES_PER_ROW = (NUM_VALVES + BITS_PER_BYTE - 1) / BITS_PER_BYTE;
+            setupLeds();
+            Serial.print("Reconfigured for ");
+            Serial.print(NUM_VALVES);
+            Serial.println(" valves.");
+        }
+    } else if (strcmp(action, "play") == 0) {
       isPlaying = true;
       currentPatternRow = 0; // Reset animation
     } else if (strcmp(action, "pause") == 0) {
@@ -155,6 +176,7 @@ void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventT
     } else if (strcmp(action, "speed") == 0) {
       animationSpeed = doc["value"];
     } else if (strcmp(action, "color") == 0) {
+      if (leds == nullptr) return;
       const char* colorStr = doc["value"]; // e.g., "#RRGGBB"
       long number = (long) strtol( &colorStr[1], NULL, 16);
       int r = number >> 16;
@@ -207,10 +229,7 @@ void setup() {
   pinMode(LATCH_PIN, OUTPUT);
   pinMode(CLOCK_PIN, OUTPUT);
   pinMode(DATA_PIN, OUTPUT);
-  FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, NUM_LEDS);
-  FastLED.setBrightness(50);
-  for(int i = 0; i < NUM_LEDS; i++) { leds[i] = CRGB::Black; }
-  FastLED.show();
+  setupLeds(); // Initial LED setup
 
   // -- Initialize SPIFFS
   if (!SPIFFS.begin(true)) {
@@ -261,7 +280,6 @@ void loop() {
 
     int bufferOffset = currentPatternRow * BYTES_PER_ROW;
     byte currentRowData[BYTES_PER_ROW];
-    memcpy(currentRowData, &patternBuffer[bufferOffset], BYTES_PER_ROW);
     
     // The pattern is visualized top-down, but the physical curtain needs bottom-up.
     // We reverse the row order here before sending to hardware.

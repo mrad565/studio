@@ -2,6 +2,7 @@
 // This script builds the React app, prepares it for SPIFFS, and generates the ESP32 firmware.
 const fs = require('fs-extra');
 const path = require('path');
+const cheerio = require('cheerio');
 
 async function main() {
     console.log('Starting ESP32 preparation script...');
@@ -22,11 +23,76 @@ async function main() {
     await fs.emptyDir(esp32Dir);
     console.log('Cleaned target directories.');
     
-    // 3. Copy all build files from `out` to `data`
-    console.log('Copying React app to data/ folder...');
-    await fs.copy(outDir, dataDir);
-    console.log('Copied React app to data/ folder.');
+    console.log('Processing and flattening React app for SPIFFS...');
 
+    // Load main HTML file to manipulate it
+    const $ = cheerio.load(fs.readFileSync(htmlPath, 'utf-8'));
+
+    // --- Process and combine all CSS files into style.css ---
+    const cssHrefs = [];
+    $('link[rel="stylesheet"]').each((i, el) => {
+        const href = $(el).attr('href');
+        if (href) cssHrefs.push(href);
+    });
+
+    let combinedCss = '';
+    for (const href of cssHrefs) {
+        const cssPath = path.join(outDir, href);
+        if (fs.existsSync(cssPath)) {
+            combinedCss += fs.readFileSync(cssPath, 'utf-8');
+        } else {
+            console.warn(`Warning: Could not find CSS file ${href}`);
+        }
+    }
+    
+    $('link[rel="stylesheet"]').remove(); // Remove old links
+    if (combinedCss) {
+        fs.writeFileSync(path.join(dataDir, 'style.css'), combinedCss);
+        $('head').append('<link rel="stylesheet" href="/style.css">'); // Add single new link
+        console.log('Created combined style.css');
+    }
+
+    // --- Process and combine all JS files into app.js ---
+    const scriptSrcs = [];
+    $('script[src]').each((i, el) => {
+        const src = $(el).attr('src');
+        if (src) scriptSrcs.push(src);
+    });
+    
+    let combinedJs = '';
+    for (const src of scriptSrcs) {
+        const jsPath = path.join(outDir, src);
+        if (fs.existsSync(jsPath)) {
+            combinedJs += fs.readFileSync(jsPath, 'utf-8') + ';\n'; // Append semicolon for safety
+        } else {
+            console.warn(`Warning: Could not find JS file ${src}`);
+        }
+    }
+    
+    $('script[src]').remove(); // Remove old scripts
+    if (combinedJs) {
+        fs.writeFileSync(path.join(dataDir, 'app.js'), combinedJs);
+        // Add a single deferred script tag. 'defer' is important for execution order.
+        $('body').append('<script defer src="/app.js"></script>');
+        console.log('Created combined app.js');
+    }
+
+    // --- Copy other root files like favicon.ico ---
+    const rootItems = fs.readdirSync(outDir);
+    for (const item of rootItems) {
+        const sourcePath = path.join(outDir, item);
+        const destPath = path.join(dataDir, item);
+        if (fs.statSync(sourcePath).isFile() && item !== 'index.html') {
+             fs.copySync(sourcePath, destPath);
+             console.log(`Copied root file: ${item}`);
+        }
+    }
+
+    // Save the modified index.html
+    fs.writeFileSync(path.join(dataDir, 'index.html'), $.html());
+    console.log('Created modified index.html');
+    console.log('React app processed for SPIFFS.');
+    
     // 4. Generate and write the main.ino file
     const inoContent = generateInoCode();
     await fs.writeFile(path.join(esp32Dir, 'main.ino'), inoContent);
@@ -469,3 +535,7 @@ void loop() {
         }
     }
 }
+`;
+}
+
+main().catch(console.error);

@@ -88,7 +88,9 @@ function generateInoCode() {
 
 // -- EEPROM Configuration
 #define EEPROM_SIZE 256
+#define CONFIG_MAGIC 0x44574346 // "DWCF" - Used to validate stored config
 struct Configuration {
+  uint32_t magic;
   char ssid[64];
   char password[64];
   int numValves;
@@ -125,20 +127,28 @@ const int BITS_PER_BYTE = 8;
 
 // -- Configuration Management
 void saveConfiguration() {
+  config.magic = CONFIG_MAGIC;
   EEPROM.put(0, config);
   EEPROM.commit();
-}
-
-void loadConfiguration() {
-  EEPROM.get(0, config);
 }
 
 void clearConfiguration() {
   Configuration blankConfig;
   memset(&blankConfig, 0, sizeof(Configuration));
   blankConfig.configured = false;
+  blankConfig.magic = 0;
   EEPROM.put(0, blankConfig);
   EEPROM.commit();
+}
+
+void loadConfiguration() {
+  EEPROM.get(0, config);
+  // If magic number doesn't match, the config is invalid/corrupt.
+  if (config.magic != CONFIG_MAGIC) {
+    Serial.println("Magic number mismatch or config not found. Resetting to defaults.");
+    clearConfiguration();
+    EEPROM.get(0, config); // Re-read the cleared configuration
+  }
 }
 
 // -- Hardware Control
@@ -153,13 +163,23 @@ void writeShiftRegisters(byte rowData[]) {
 void setupHardware() {
     if (leds != nullptr) {
         delete[] leds;
+        leds = nullptr;
     }
-    BYTES_PER_ROW = (config.numValves + BITS_PER_BYTE - 1) / BITS_PER_BYTE;
-    leds = new CRGB[config.numLeds];
-    FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, config.numLeds);
-    FastLED.setBrightness(50);
-    for(int i = 0; i < config.numLeds; i++) { leds[i] = CRGB::Black; }
-    FastLED.show();
+    // Only setup hardware if config values are sane
+    if (config.numValves > 0 && config.numLeds > 0) {
+        BYTES_PER_ROW = (config.numValves + BITS_PER_BYTE - 1) / BITS_PER_BYTE;
+        leds = new CRGB[config.numLeds];
+        if (leds) {
+            FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, config.numLeds);
+            FastLED.setBrightness(50);
+            for(int i = 0; i < config.numLeds; i++) { leds[i] = CRGB::Black; }
+            FastLED.show();
+        } else {
+            Serial.println("Error: Failed to allocate memory for LEDs!");
+        }
+    } else {
+        Serial.println("Warning: Invalid number of valves or LEDs. Hardware not initialized.");
+    }
 }
 
 // -- AP Mode Setup Page
@@ -271,6 +291,7 @@ void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventT
             config.numValves = newNumValves;
             config.numLeds = newNumLeds;
             setupHardware();
+            saveConfiguration(); // Persist hardware changes
             Serial.print("Reconfigured for ");
             Serial.print(config.numValves);
             Serial.print(" valves and ");
@@ -282,8 +303,15 @@ void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventT
       currentPatternRow = 0; // Reset animation
     } else if (strcmp(action, "pause") == 0) {
       isPlaying = false;
-      byte clearByte[BYTES_PER_ROW] = {0};
-      writeShiftRegisters(clearByte);
+      // Use heap for temporary buffer to avoid stack overflow with large valve counts
+      byte* clearByte = new byte[BYTES_PER_ROW];
+      if (clearByte) {
+          memset(clearByte, 0, BYTES_PER_ROW);
+          writeShiftRegisters(clearByte);
+          delete[] clearByte;
+      } else {
+          Serial.println("ERROR: could not allocate memory to clear valves!");
+      }
     } else if (strcmp(action, "speed") == 0) {
       animationSpeed = doc["value"];
     } else if (strcmp(action, "color") == 0) {
@@ -308,13 +336,15 @@ void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventT
       
       int bufferIndex = 0;
       for (JsonArray row : pattern) {
-        byte rowData[BYTES_PER_ROW] = {0};
+        byte rowData[BYTES_PER_ROW] = {0}; // This is safe, stack size is known at this point and small.
         int valveIndex = 0;
         for (bool valveOn : row) {
           if (valveOn) {
             int bytePos = valveIndex / BITS_PER_BYTE;
             int bitPos = valveIndex % BITS_PER_BYTE;
-            bitSet(rowData[bytePos], bitPos); 
+            if(bytePos < BYTES_PER_ROW) {
+                bitSet(rowData[bytePos], bitPos); 
+            }
           }
           valveIndex++;
         }
@@ -332,10 +362,20 @@ void setupSTA() {
     WiFi.mode(WIFI_STA);
     WiFi.begin(config.ssid, config.password);
     Serial.print("Connecting to WiFi...");
-    while (WiFi.status() != WL_CONNECTED) {
+    int retries = 20; // Try for 10 seconds
+    while (WiFi.status() != WL_CONNECTED && retries > 0) {
         delay(500);
         Serial.print(".");
+        retries--;
     }
+
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("\nFailed to connect to WiFi. Rebooting into AP mode.");
+        clearConfiguration();
+        delay(1000);
+        ESP.restart();
+    }
+
     Serial.println("");
     Serial.print("Connected! IP Address: ");
     Serial.println(WiFi.localIP());
@@ -409,27 +449,23 @@ void loop() {
 
         if (isPlaying && numPatternRows > 0 && millis() - lastUpdateTime > animationSpeed) {
             lastUpdateTime = millis();
-
-            int bufferOffset = currentPatternRow * BYTES_PER_ROW;
-            byte currentRowData[BYTES_PER_ROW];
             
             int reversedRow = numPatternRows - 1 - currentPatternRow;
             int reversedOffset = reversedRow * BYTES_PER_ROW;
-            memcpy(currentRowData, &patternBuffer[reversedOffset], BYTES_PER_ROW);
             
-            writeShiftRegisters(currentRowData);
+            // Check bounds to be extra safe and prevent crashes
+            if ((reversedOffset + BYTES_PER_ROW) <= PATTERN_BUFFER_SIZE) {
+                // Pass pointer directly from the main buffer to avoid stack allocation (VLA)
+                writeShiftRegisters(&patternBuffer[reversedOffset]);
+            } else {
+                Serial.println("Error: Animation index out of bounds! Stopping playback.");
+                isPlaying = false;
+            }
 
             currentPatternRow++;
             if (currentPatternRow >= numPatternRows) {
-            currentPatternRow = 0; // Loop the animation
+                currentPatternRow = 0; // Loop the animation
             }
         }
     }
 }
-`;
-}
-
-main().catch(err => {
-    console.error('An error occurred during the ESP32 preparation script:', err);
-    process.exit(1);
-});

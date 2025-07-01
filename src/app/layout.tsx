@@ -3,8 +3,8 @@ import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 
 export const metadata: Metadata = {
-  title: 'AquaGlyph',
-  description: 'Control your digital water curtain with AI.',
+  title: 'Digital Water Curtain',
+  description: 'Control your digital water curtain.',
 };
 
 export default function RootLayout({

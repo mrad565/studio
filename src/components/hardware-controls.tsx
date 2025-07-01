@@ -1,79 +1,55 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import { useToast } from "@/hooks/use-toast";
-import type { Pattern } from "@/types";
-import { Pause, Play, Rss, UploadCloud, X, Zap, ZapOff } from "lucide-react";
+import { Pause, Play, Rss, UploadCloud, Zap, ZapOff, Cog } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 type HardwareControlsProps = {
-  patterns: Pattern[];
+  ipAddress: string;
+  setIpAddress: (ip: string) => void;
+  isConnected: boolean;
+  handleConnect: () => void;
+  sendCommand: (command: object) => boolean;
+  isUploading: boolean;
+  handleUploadSequence: () => void;
 };
 
-export function HardwareControls({ patterns }: HardwareControlsProps) {
-  const [ipAddress, setIpAddress] = useState("192.168.1.100");
-  const [isConnected, setIsConnected] = useState(false);
+export function HardwareControls({
+  ipAddress,
+  setIpAddress,
+  isConnected,
+  handleConnect,
+  sendCommand,
+  isUploading,
+  handleUploadSequence
+}: HardwareControlsProps) {
   const [speed, setSpeed] = useState(100);
-  const [color, setColor] =useState("#7DF9FF");
+  const [color, setColor] = useState("#7DF9FF");
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const ws = useRef<WebSocket | null>(null);
-  const { toast } = useToast();
 
   useEffect(() => {
-    // Cleanup WebSocket on component unmount
-    return () => {
-      ws.current?.close();
-    };
-  }, []);
-
-  const handleConnect = () => {
-    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-      ws.current.close();
-      return;
-    }
-    
-    if (!ipAddress) {
-      toast({ variant: "destructive", title: "Error", description: "Please enter the ESP32 IP address." });
-      return;
-    }
-    
-    ws.current = new WebSocket(`ws://${ipAddress}/ws`);
-    
-    ws.current.onopen = () => {
-      console.log("WebSocket Connected");
-      setIsConnected(true);
-      toast({ title: "Success", description: "Connected to AquaGlyph hardware!" });
-      // On connect, sync initial color
-      ws.current?.send(JSON.stringify({ action: "color", value: color }));
-    };
-
-    ws.current.onclose = () => {
-      console.log("WebSocket Disconnected");
-      setIsConnected(false);
-      setIsPlaying(false);
-      toast({ variant: "destructive", title: "Disconnected", description: "Connection to hardware lost." });
-    };
-
-    ws.current.onerror = (error) => {
-      console.error("WebSocket Error:", error);
-      setIsConnected(false);
-      setIsPlaying(false);
-      toast({ variant: "destructive", title: "Connection Failed", description: "Could not connect to the specified IP address." });
-    };
-  };
-
-  const sendCommand = (command: object) => {
-    if (ws.current?.readyState === WebSocket.OPEN) {
-      ws.current.send(JSON.stringify(command));
+    // Sync initial color on connect
+    if (isConnected) {
+        sendCommand({ action: "color", value: color });
     } else {
-       toast({ variant: "destructive", title: "Not Connected", description: "Connect to the hardware first." });
+        setIsPlaying(false);
     }
-  };
+  }, [isConnected]);
 
   const handleSpeedChange = (value: number[]) => {
     const newSpeed = 520 - value[0];
@@ -88,63 +64,61 @@ export function HardwareControls({ patterns }: HardwareControlsProps) {
 
   const handlePlayPause = () => {
     const newIsPlaying = !isPlaying;
-    setIsPlaying(newIsPlaying);
-    sendCommand({ action: newIsPlaying ? "play" : "pause" });
+    if (sendCommand({ action: newIsPlaying ? "play" : "pause" })) {
+        setIsPlaying(newIsPlaying);
+    }
   };
-  
-  const handleUploadSequence = () => {
-    if (patterns.length === 0) {
-        toast({ variant: "destructive", title: "Empty Sequence", description: "Generate some patterns before uploading." });
-        return;
+
+  const handleRebootToAP = () => {
+    if(sendCommand({ action: "reboot_to_ap" })) {
+      // The ESP32 will reboot, which will close the connection.
+      // The onclose event handler in page.tsx will handle state changes.
     }
-    setIsUploading(true);
-
-    const numValves = patterns[0]?.patternData[0]?.length || 0;
-    if (numValves === 0) {
-        toast({ variant: "destructive", title: "Invalid Pattern", description: "Cannot upload a pattern with zero valves." });
-        setIsUploading(false);
-        return;
-    }
-
-    // Send configuration first to allow ESP32 to re-initialize if needed
-    sendCommand({ action: "config", valves: numValves });
-    
-    // Combine all patterns into a single giant pattern array
-    const combinedPatternData = patterns.flatMap(p => p.patternData);
-
-    sendCommand({ action: "load_pattern", pattern: combinedPatternData });
-    toast({ title: "Sequence Uploaded", description: `Sent ${patterns.length} patterns (${numValves} valves) to the hardware.` });
-    
-    // Reset play state after upload
-    if (isPlaying) {
-      setIsPlaying(false);
-      // Give ESP32 a moment to process config before pausing
-      setTimeout(() => sendCommand({ action: "pause" }), 100);
-    }
-
-    setTimeout(() => setIsUploading(false), 1000);
   };
 
   return (
     <Card className="bg-card border-border shadow-2xl shadow-black/25">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-primary font-headline">
-          <Rss className="h-6 w-6" />
-          Hardware Controls
+        <CardTitle className="flex items-center justify-between text-primary font-headline">
+          <div className="flex items-center gap-2">
+            <Rss className="h-6 w-6" />
+            Hardware Controls
+          </div>
+          {isConnected && (
+             <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary">
+                  <Cog className="h-5 w-5" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Reconfigure Device?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will reboot the device into Access Point (AP) mode. You will be disconnected and will need to connect to the "DigitalWaterCurtain-Setup" WiFi network to reconfigure it. Are you sure?
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleRebootToAP}>Reboot to AP Mode</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
         </CardTitle>
-        <CardDescription>Connect to and control your physical AquaGlyph curtain.</CardDescription>
+        <CardDescription>Connect to and control your physical water curtain.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="space-y-2">
             <Label htmlFor="ip-address">ESP32 IP Address</Label>
             <div className="flex gap-2">
-                <Input id="ip-address" value={ipAddress} onChange={(e) => setIpAddress(e.target.value)} placeholder="e.g., 192.168.1.100" className="bg-input border-border" disabled={isConnected} />
+                <Input id="ip-address" value={ipAddress} onChange={(e) => setIpAddress(e.target.value)} placeholder="e.g., 192.168.4.1" className="bg-input border-border" disabled={isConnected} />
                 <Button onClick={handleConnect} variant={isConnected ? "destructive" : "default"} className="w-[120px]">
                     {isConnected ? <><ZapOff /> Disconnect</> : <><Zap /> Connect</>}
                 </Button>
             </div>
-             <p className={`text-xs pl-1 ${isConnected ? 'text-accent' : 'text-muted-foreground'}`}>
-                Status: {isConnected ? 'Connected' : 'Disconnected'}
+             <p className={`text-xs pl-1 text-muted-foreground`}>
+                In setup mode, connect to "DigitalWaterCurtain-Setup" WiFi and use IP 192.168.4.1.
             </p>
         </div>
         

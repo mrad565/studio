@@ -2,7 +2,6 @@
 // This script builds the React app, prepares it for SPIFFS, and generates the ESP32 firmware.
 const fs = require('fs-extra');
 const path = require('path');
-const cheerio = require('cheerio');
 
 async function main() {
     console.log('Starting ESP32 preparation script...');
@@ -11,10 +10,9 @@ async function main() {
     const outDir = path.join(__dirname, '..', 'out');
     const dataDir = path.join(__dirname, '..', 'data');
     const esp32Dir = path.join(__dirname, '..', 'esp32');
-    const htmlPath = path.join(outDir, 'index.html');
     
-    if (!fs.existsSync(htmlPath)) {
-        console.error(`Error: '${htmlPath}' not found. Did you run "next build" first?`);
+    if (!fs.existsSync(outDir)) {
+        console.error(`Error: '${outDir}' not found. Did you run "next build" first?`);
         process.exit(1);
     }
 
@@ -23,77 +21,41 @@ async function main() {
     await fs.emptyDir(esp32Dir);
     console.log('Cleaned target directories.');
     
-    console.log('Processing and flattening React app for SPIFFS...');
+    console.log('Flattening React app assets for SPIFFS...');
 
-    // Load main HTML file to manipulate it
-    const $ = cheerio.load(fs.readFileSync(htmlPath, 'utf-8'));
-
-    // --- Process and combine all CSS files into style.css ---
-    const cssHrefs = [];
-    $('link[rel="stylesheet"]').each((i, el) => {
-        const href = $(el).attr('href');
-        if (href) cssHrefs.push(href);
-    });
-
-    let combinedCss = '';
-    for (const href of cssHrefs) {
-        const cssPath = path.join(outDir, href);
-        if (fs.existsSync(cssPath)) {
-            combinedCss += fs.readFileSync(cssPath, 'utf-8');
-        } else {
-            console.warn(`Warning: Could not find CSS file ${href}`);
+    // 3. Copy all files from 'out' directory, flattening the structure
+    const copyAndFlatten = (sourceDir) => {
+        const items = fs.readdirSync(sourceDir);
+        for (const item of items) {
+            const sourcePath = path.join(sourceDir, item);
+            if (fs.statSync(sourcePath).isDirectory()) {
+                // Recursively flatten subdirectories
+                copyAndFlatten(sourcePath);
+            } else {
+                // Copy file to the root of the data directory
+                const destPath = path.join(dataDir, item);
+                if (!fs.existsSync(destPath)) { // Avoid overwriting root files like index.html
+                    fs.copySync(sourcePath, destPath);
+                    console.log(`Copied and flattened: ${item}`);
+                }
+            }
         }
-    }
+    };
     
-    $('link[rel="stylesheet"]').remove(); // Remove old links
-    if (combinedCss) {
-        fs.writeFileSync(path.join(dataDir, 'style.css'), combinedCss);
-        $('head').append('<link rel="stylesheet" href="/style.css">'); // Add single new link
-        console.log('Created combined style.css');
-    }
-
-    // --- Process and combine all JS files into app.js ---
-    const scriptSrcs = [];
-    $('script[src]').each((i, el) => {
-        const src = $(el).attr('src');
-        if (src) scriptSrcs.push(src);
-    });
-    
-    let combinedJs = '';
-    for (const src of scriptSrcs) {
-        const jsPath = path.join(outDir, src);
-        if (fs.existsSync(jsPath)) {
-            combinedJs += fs.readFileSync(jsPath, 'utf-8') + ';\n'; // Append semicolon for safety
-        } else {
-            console.warn(`Warning: Could not find JS file ${src}`);
-        }
-    }
-    
-    $('script[src]').remove(); // Remove old scripts
-    if (combinedJs) {
-        fs.writeFileSync(path.join(dataDir, 'app.js'), combinedJs);
-        // Add a single deferred script tag. 'defer' is important for execution order.
-        $('body').append('<script defer src="/app.js"></script>');
-        console.log('Created combined app.js');
-    }
-
-    // --- Copy other root files like favicon.ico ---
-    const rootItems = fs.readdirSync(outDir);
-    for (const item of rootItems) {
+    // Start by copying root files to preserve them
+    fs.readdirSync(outDir).forEach(item => {
         const sourcePath = path.join(outDir, item);
-        const destPath = path.join(dataDir, item);
-        if (fs.statSync(sourcePath).isFile() && item !== 'index.html') {
-             fs.copySync(sourcePath, destPath);
-             console.log(`Copied root file: ${item}`);
+        if (fs.statSync(sourcePath).isFile()) {
+            fs.copySync(sourcePath, path.join(dataDir, item));
         }
-    }
+    });
 
-    // Save the modified index.html
-    fs.writeFileSync(path.join(dataDir, 'index.html'), $.html());
-    console.log('Created modified index.html');
+    // Now flatten the rest of the directories
+    copyAndFlatten(outDir);
+    
     console.log('React app processed for SPIFFS.');
     
-    // 4. Generate and write the main.ino file
+    // 4. Generate and write the main.ino file with path rewriting logic
     const inoContent = generateInoCode();
     await fs.writeFile(path.join(esp32Dir, 'main.ino'), inoContent);
     console.log(`Generated ${path.join(esp32Dir, 'main.ino')}.`);
@@ -436,7 +398,7 @@ void setupSTA() {
     }
 
     if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("\nFailed to connect to WiFi. Rebooting into AP mode.");
+        Serial.println("\\nFailed to connect to WiFi. Rebooting into AP mode.");
         clearConfiguration();
         delay(1000);
         ESP.restart();
@@ -448,10 +410,26 @@ void setupSTA() {
 
     ws.onEvent(onWsEvent);
     server.addHandler(&ws);
-
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-        request->send(SPIFFS, "/index.html", "text/html");
+    
+    // --- Path Rewriting Handlers for Next.js static assets ---
+    // Serve CSS files
+    server.on("/_next/static/css/(.+)", HTTP_GET, [](AsyncWebServerRequest *request){
+        String path = "/" + request->pathArg(0);
+        request->send(SPIFFS, path, "text/css");
     });
+    
+    // Serve JS chunk files
+    server.on("/_next/static/chunks/(.+)", HTTP_GET, [](AsyncWebServerRequest *request){
+        String path = "/" + request->pathArg(0);
+        request->send(SPIFFS, path, "text/javascript");
+    });
+    
+    // Serve other static assets from the build-ID folder (e.g., _buildManifest.js)
+    server.on("/_next/static/([a-zA-Z0-9\\\\-_]+)/(.+)", HTTP_GET, [](AsyncWebServerRequest *request){
+        String path = "/" + request->pathArg(1);
+        request->send(SPIFFS, path, "text/javascript"); // Assuming JS, could be other types
+    });
+
     server.serveStatic("/", SPIFFS, "/");
 
     server.onNotFound([](AsyncWebServerRequest *request){

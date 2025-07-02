@@ -28,9 +28,12 @@ async function main() {
     const htmlContent = await fs.readFile(originalHtmlPath, 'utf-8');
     const $ = cheerio.load(htmlContent);
 
+    // Remove original stylesheets from the HTML first
+    $('link[rel="stylesheet"]').remove();
+    
     // Bundle CSS
     const cssFiles = [];
-    $('link[rel="stylesheet"]').each((i, el) => {
+    $('head').find('link[href*=".css"]').each((i, el) => {
         const href = $(el).attr('href');
         if (href && href.startsWith('/_next/')) {
             cssFiles.push(path.join(outDir, href));
@@ -51,8 +54,6 @@ async function main() {
         // Add the new stylesheet link
         $('head').append('<link rel="stylesheet" href="/style.css">');
     }
-    // Remove original stylesheets from the HTML
-    $('link[rel="stylesheet"]').remove();
     
     // Bundle JavaScript in order
     const scriptFiles = [];
@@ -74,11 +75,12 @@ async function main() {
     if (bundledJs) {
         await fs.writeFile(path.join(dataDir, 'app.js'), bundledJs);
         console.log('Bundled JS into app.js');
+        // Remove original script tags from the HTML
+        $('script[src]').remove();
         // Add the bundled script at the end of the body with 'defer' to ensure HTML is parsed first
         $('body').append('<script src="/app.js" defer></script>');
     }
-    // Remove original script tags from the HTML
-    $('script[src]').remove();
+    
 
     // Get the final, modified HTML
     const newHtml = $.html();
@@ -232,7 +234,7 @@ void handleSave(AsyncWebServerRequest *request) {
             if (request->hasParam("password", true)) {
                 strncpy(config.password, request->getParam("password", true)->value().c_str(), sizeof(config.password) - 1);
             } else {
-                config.password[0] = '\0';
+                config.password[0] = '\\0';
             }
             
             config.numValves = valves.toInt();
@@ -284,7 +286,7 @@ void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventT
                 config.numLeds = newNumLeds;
                 setupHardware();
                 saveConfiguration();
-                Serial.printf("Reconfigured for %d valves and %d LEDs.\n", config.numValves, config.numLeds);
+                Serial.printf("Reconfigured for %d valves and %d LEDs.\\n", config.numValves, config.numLeds);
             }
         } else if (strcmp(action, "play") == 0) {
             isPlaying = true;
@@ -332,7 +334,7 @@ void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventT
                 memcpy(&patternBuffer[bufferIndex], rowData, BYTES_PER_ROW);
                 bufferIndex += BYTES_PER_ROW;
             }
-            Serial.printf("Loaded pattern with %d rows.\n", numPatternRows);
+            Serial.printf("Loaded pattern with %d rows.\\n", numPatternRows);
         }
     }
 }
@@ -349,7 +351,7 @@ void setupSTA() {
     }
 
     if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("\nFailed to connect to WiFi. Rebooting into AP mode.");
+        Serial.println("\\nFailed to connect to WiFi. Rebooting into AP mode.");
         clearConfiguration();
         delay(1000);
         ESP.restart();
@@ -428,5 +430,3 @@ void loop() {
 }
 
 main().catch(console.error);
-
-    

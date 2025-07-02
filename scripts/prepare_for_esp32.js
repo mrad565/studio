@@ -2,9 +2,10 @@
 // This script builds the React app, prepares it for SPIFFS, and generates the ESP32 firmware.
 const fs = require('fs-extra');
 const path = require('path');
+const cheerio = require('cheerio');
 
 async function main() {
-    console.log('Starting ESP32 preparation script...');
+    console.log('Starting ESP32 preparation script (Bundling Mode)...');
 
     // 1. Define source and destination directories
     const outDir = path.join(__dirname, '..', 'out');
@@ -21,41 +22,65 @@ async function main() {
     await fs.emptyDir(esp32Dir);
     console.log('Cleaned target directories.');
     
-    console.log('Flattening React app assets for SPIFFS...');
+    console.log('Bundling React app assets for SPIFFS...');
 
-    // 3. Copy all files from 'out' directory, flattening the structure
-    const copyAndFlatten = (sourceDir) => {
-        const items = fs.readdirSync(sourceDir);
-        for (const item of items) {
-            const sourcePath = path.join(sourceDir, item);
-            if (fs.statSync(sourcePath).isDirectory()) {
-                // Recursively flatten subdirectories
-                copyAndFlatten(sourcePath);
-            } else {
-                // Copy file to the root of the data directory
-                const destPath = path.join(dataDir, item);
-                if (!fs.existsSync(destPath)) { // Avoid overwriting root files like index.html
-                    fs.copySync(sourcePath, destPath);
-                    console.log(`Copied and flattened: ${item}`);
-                }
+    // 3. Read and process the main index.html file
+    const originalHtmlPath = path.join(outDir, 'index.html');
+    if (!fs.existsSync(originalHtmlPath)) {
+        console.error('Error: index.html not found in out directory.');
+        process.exit(1);
+    }
+
+    const htmlContent = fs.readFileSync(originalHtmlPath, 'utf8');
+    const $ = cheerio.load(htmlContent);
+
+    // 4. Bundle CSS
+    let cssContent = '';
+    $('link[rel="stylesheet"]').each((i, elem) => {
+        const href = $(elem).attr('href');
+        if (href) {
+            const cssPath = path.join(outDir, href);
+            if (fs.existsSync(cssPath)) {
+                console.log(`Bundling CSS from: ${href}`);
+                cssContent += fs.readFileSync(cssPath, 'utf8') + '\n';
             }
         }
-    };
-    
-    // Start by copying root files to preserve them
-    fs.readdirSync(outDir).forEach(item => {
-        const sourcePath = path.join(outDir, item);
-        if (fs.statSync(sourcePath).isFile()) {
-            fs.copySync(sourcePath, path.join(dataDir, item));
-        }
+        $(elem).remove(); // Remove old link tag
     });
 
-    // Now flatten the rest of the directories
-    copyAndFlatten(outDir);
+    // 5. Bundle JavaScript
+    let jsContent = '';
+    $('script[src]').each((i, elem) => {
+        const src = $(elem).attr('src');
+        if (src) {
+            const jsPath = path.join(outDir, src);
+            if (fs.existsSync(jsPath)) {
+                console.log(`Bundling JS from: ${src}`);
+                // Add a semicolon for safety in case a file doesn't end with one
+                jsContent += fs.readFileSync(jsPath, 'utf8') + ';\n';
+            }
+        }
+        $(elem).remove(); // Remove old script tag
+    });
+
+    // 6. Create new HTML with bundled asset links
+    $('head').append('<link rel="stylesheet" href="/style.css">');
+    $('body').append('<script defer src="/app.js"></script>');
     
-    console.log('React app processed for SPIFFS.');
-    
-    // 4. Generate and write the main.ino file with path rewriting logic
+    // 7. Write bundled files to the 'data' directory
+    await fs.writeFile(path.join(dataDir, 'index.html'), $.html());
+    await fs.writeFile(path.join(dataDir, 'style.css'), cssContent);
+    await fs.writeFile(path.join(dataDir, 'app.js'), jsContent);
+    console.log('Created bundled index.html, style.css, and app.js');
+
+    // 8. Copy favicon if it exists
+    const faviconPath = path.join(outDir, 'favicon.ico');
+    if (fs.existsSync(faviconPath)) {
+        fs.copySync(faviconPath, path.join(dataDir, 'favicon.ico'));
+        console.log('Copied favicon.ico');
+    }
+
+    // 9. Generate and write the main.ino file with simplified server logic
     const inoContent = generateInoCode();
     await fs.writeFile(path.join(esp32Dir, 'main.ino'), inoContent);
     console.log(`Generated ${path.join(esp32Dir, 'main.ino')}.`);
@@ -86,7 +111,7 @@ function generateInoCode() {
   1. Install required libraries in Arduino IDE -> Sketch -> Include Library -> Manage Libraries:
      - ESPAsyncWebServer
      - AsyncTCP
-     - ArduinoJson
+     - ArduinoJson (Version 6.x.x)
      - FastLED
      - EEPROM
   2. Install the ESP32 SPIFFS upload tool:
@@ -137,8 +162,8 @@ AsyncWebSocket ws("/ws");
 Configuration config;
 
 // -- Curtain State
-int BYTES_PER_ROW = 2; // (config.numValves + 7) / 8
-#define PATTERN_BUFFER_SIZE 4096 
+int BYTES_PER_ROW = 2; // Default, will be recalculated
+#define PATTERN_BUFFER_SIZE 8192 // Increased buffer for larger/more complex patterns
 byte patternBuffer[PATTERN_BUFFER_SIZE];
 CRGB* leds = nullptr;
 
@@ -171,8 +196,8 @@ void clearConfiguration() {
 
 void loadConfiguration() {
   EEPROM.get(0, config);
-  // If magic number doesn't match, the config is invalid/corrupt.
-  if (config.magic != CONFIG_MAGIC) {
+  // If magic number doesn't match or config is invalid, reset to defaults.
+  if (config.magic != CONFIG_MAGIC || config.numValves <= 0 || config.numLeds <= 0) {
     Serial.println("Magic number mismatch or config not found. Resetting to defaults.");
     clearConfiguration();
     EEPROM.get(0, config); // Re-read the cleared configuration
@@ -295,8 +320,11 @@ void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventT
   } else if (type == WS_EVT_DISCONNECT) {
     Serial.println("WebSocket client disconnected");
   } else if (type == WS_EVT_DATA) {
-    JsonDocument doc;
+    // Allocate a JSON document. It's important to have enough memory.
+    // 8KB should be enough for large patterns.
+    DynamicJsonDocument doc(8192);
     DeserializationError error = deserializeJson(doc, (char*)data, len);
+    
     if (error) {
       Serial.print(F("deserializeJson() failed: "));
       Serial.println(error.c_str());
@@ -304,6 +332,8 @@ void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventT
     }
 
     const char* action = doc["action"];
+    if (!action) return;
+
     Serial.print("Received action: ");
     Serial.println(action);
 
@@ -364,7 +394,7 @@ void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventT
       
       int bufferIndex = 0;
       for (JsonArray row : pattern) {
-        byte rowData[BYTES_PER_ROW] = {0}; // This is safe, stack size is known at this point and small.
+        byte rowData[BYTES_PER_ROW] = {0}; // This is safe, stack size is known and small.
         int valveIndex = 0;
         for (bool valveOn : row) {
           if (valveOn) {
@@ -411,27 +441,18 @@ void setupSTA() {
     ws.onEvent(onWsEvent);
     server.addHandler(&ws);
     
-    // --- Path Rewriting Handlers for Next.js static assets ---
-    // Serve CSS files
-    server.on("/_next/static/css/(.+)", HTTP_GET, [](AsyncWebServerRequest *request){
-        String path = "/" + request->pathArg(0);
-        request->send(SPIFFS, path, "text/css");
+    // --- Simplified Server Logic for Bundled App ---
+    server.on("/app.js", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(SPIFFS, "/app.js", "text/javascript");
     });
-    
-    // Serve JS chunk files
-    server.on("/_next/static/chunks/(.+)", HTTP_GET, [](AsyncWebServerRequest *request){
-        String path = "/" + request->pathArg(0);
-        request->send(SPIFFS, path, "text/javascript");
+    server.on("/style.css", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(SPIFFS, "/style.css", "text/css");
     });
-    
-    // Serve other static assets from the build-ID folder (e.g., _buildManifest.js)
-    server.on("/_next/static/([a-zA-Z0-9\\\\-_]+)/(.+)", HTTP_GET, [](AsyncWebServerRequest *request){
-        String path = "/" + request->pathArg(1);
-        request->send(SPIFFS, path, "text/javascript"); // Assuming JS, could be other types
+    server.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(SPIFFS, "/favicon.ico", "image/x-icon");
     });
 
-    server.serveStatic("/", SPIFFS, "/");
-
+    // Fallback to index.html for root and any other client-side routes
     server.onNotFound([](AsyncWebServerRequest *request){
         if (request->method() == HTTP_GET) {
            request->send(SPIFFS, "/index.html", "text/html");
@@ -494,13 +515,14 @@ void loop() {
         if (isPlaying && numPatternRows > 0 && millis() - lastUpdateTime > animationSpeed) {
             lastUpdateTime = millis();
             
-            int reversedRow = numPatternRows - 1 - currentPatternRow;
-            int reversedOffset = reversedRow * BYTES_PER_ROW;
+            // The pattern is stored top-to-bottom. The animation should also play top-to-bottom.
+            // The visualizer on the web might play bottom-to-top, but the physical curtain is top-to-bottom.
+            int currentRowOffset = currentPatternRow * BYTES_PER_ROW;
             
             // Check bounds to be extra safe and prevent crashes
-            if ((reversedOffset + BYTES_PER_ROW) <= PATTERN_BUFFER_SIZE) {
-                // Pass pointer directly from the main buffer to avoid stack allocation (VLA)
-                writeShiftRegisters(&patternBuffer[reversedOffset]);
+            if ((currentRowOffset + BYTES_PER_ROW) <= PATTERN_BUFFER_SIZE) {
+                // Pass pointer directly from the main buffer to avoid stack allocation
+                writeShiftRegisters(&patternBuffer[currentRowOffset]);
             } else {
                 Serial.println("Error: Animation index out of bounds! Stopping playback.");
                 isPlaying = false;
@@ -517,3 +539,5 @@ void loop() {
 }
 
 main().catch(console.error);
+
+  

@@ -4,7 +4,7 @@ const path = require('path');
 const cheerio = require('cheerio');
 
 async function main() {
-    console.log('Starting ESP32 preparation script (v3 - Flattening Mode)...');
+    console.log('Starting ESP32 preparation script (v4 - Bundling Mode)...');
 
     const outDir = path.join(__dirname, '..', 'out');
     const dataDir = path.join(__dirname, '..', 'data');
@@ -15,62 +15,95 @@ async function main() {
         process.exit(1);
     }
 
-    // Clean & create destination directories
     await fs.emptyDir(dataDir);
     await fs.emptyDir(esp32Dir);
     console.log('Cleaned target directories.');
-    
-    // Copy main index.html
+
     const originalHtmlPath = path.join(outDir, 'index.html');
     if (!fs.existsSync(originalHtmlPath)) {
         console.error('Error: index.html not found in out directory.');
         process.exit(1);
     }
-    await fs.copy(originalHtmlPath, path.join(dataDir, 'index.html'));
-    console.log('Copied index.html');
 
-    // Copy favicon
+    const htmlContent = await fs.readFile(originalHtmlPath, 'utf-8');
+    const $ = cheerio.load(htmlContent);
+
+    // Bundle CSS
+    const cssFiles = [];
+    $('link[rel="stylesheet"]').each((i, el) => {
+        const href = $(el).attr('href');
+        if (href && href.startsWith('/_next/')) {
+            cssFiles.push(path.join(outDir, href));
+        }
+    });
+
+    let bundledCss = '';
+    for (const file of cssFiles) {
+        if (fs.existsSync(file)) {
+            bundledCss += await fs.readFile(file, 'utf-8') + '\n';
+        } else {
+            console.warn(`Warning: CSS file not found: ${file}`);
+        }
+    }
+    await fs.writeFile(path.join(dataDir, 'style.css'), bundledCss);
+    console.log('Bundled CSS into style.css');
+    
+    // Bundle JavaScript in order
+    const scriptFiles = [];
+    $('script[src^="/_next/"]').each((i, el) => {
+        const src = $(el).attr('src');
+        if (src) {
+            scriptFiles.push(path.join(outDir, src));
+        }
+    });
+
+    let bundledJs = '';
+    for (const file of scriptFiles) {
+        if (fs.existsSync(file)) {
+            bundledJs += await fs.readFile(file, 'utf-8') + ';\n'; // Add semicolon for safety
+        } else {
+             console.warn(`Warning: JS file not found: ${file}`);
+        }
+    }
+    await fs.writeFile(path.join(dataDir, 'app.js'), bundledJs);
+    console.log('Bundled JS into app.js');
+
+    // Create a new simplified index.html by extracting head elements and creating new script/link tags
+    const $originalHead = $('head').clone();
+    $originalHead.find('script').remove();
+    $originalHead.find('link[rel="stylesheet"]').remove();
+    
+    const newHtml = `<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    ${$originalHead.html()}
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body class="font-body antialiased">
+    <!-- The React app will mount here -->
+</body>
+<script src="/app.js" async=""></script>
+</html>`;
+
+    await fs.writeFile(path.join(dataDir, 'index.html'), newHtml);
+    console.log('Created new simplified index.html');
+
+    // Copy other necessary files
     const faviconPath = path.join(outDir, 'favicon.ico');
     if (fs.existsSync(faviconPath)) {
         await fs.copy(faviconPath, path.join(dataDir, 'favicon.ico'));
         console.log('Copied favicon.ico');
     }
 
-    // Find and copy all static assets, FLATTENING them
-    const staticDir = path.join(outDir, '_next', 'static');
-    if (fs.existsSync(staticDir)) {
-        const allFiles = await fs.readdir(staticDir, { recursive: true });
-        for (const file of allFiles) {
-            const sourceFile = path.join(staticDir, file);
-            const stats = await fs.stat(sourceFile);
-            if (stats.isFile()) {
-                const destFile = path.join(dataDir, path.basename(file));
-                await fs.copy(sourceFile, destFile);
-                console.log(`Copied ${path.basename(file)} to data root.`);
-            }
-        }
-    } else {
-        console.warn('Warning: _next/static directory not found. Skipping asset copy.');
-    }
-    
-    // Copy other root files if they exist (like 404.html)
-    const otherFiles = await fs.readdir(outDir);
-    for (const file of otherFiles) {
-        if(file.endsWith('.html') && file !== 'index.html' || file.endsWith('.txt')) {
-             await fs.copy(path.join(outDir, file), path.join(dataDir, file));
-             console.log(`Copied ${file}`);
-        }
-    }
-
     // Generate and write the main.ino file with the new server logic
     const inoContent = generateInoCode();
     await fs.writeFile(path.join(esp32Dir, 'main.ino'), inoContent);
-    console.log(`Generated ${path.join(esp32Dir, 'main.ino')} with intelligent routing.`);
+    console.log(`Generated ${path.join(esp32Dir, 'main.ino')}`);
 
-    console.log('\n✅ ESP32 preparation complete!');
+    console.log('\n✅ ESP32 preparation complete! Your data folder is now optimized.');
     console.log('\nNext steps:');
-    console.log('1. Open the `esp32` folder in your IDE (Arduino IDE or PlatformIO).');
-    console.log('2. Upload the `data` folder to ESP32 SPIFFS.');
+    console.log('1. Open the \`esp32\` folder in your IDE (Arduino IDE or PlatformIO).');
+    console.log('2. Upload the \`data\` folder to ESP32 SPIFFS.');
     console.log('3. Compile and upload the sketch to your ESP32.');
 }
 
@@ -125,15 +158,6 @@ int animationSpeed = 100;
 bool isPlaying = false;
 const int BITS_PER_BYTE = 8;
 
-String getContentType(String filename) {
-  if (filename.endsWith(".html")) return "text/html";
-  else if (filename.endsWith(".css")) return "text/css";
-  else if (filename.endsWith(".js")) return "application/javascript";
-  else if (filename.endsWith(".ico")) return "image/x-icon";
-  else if (filename.endsWith(".txt")) return "text/plain";
-  return "text/plain";
-}
-
 void saveConfiguration() {
   config.magic = CONFIG_MAGIC;
   EEPROM.put(0, config);
@@ -145,7 +169,7 @@ void clearConfiguration() {
   memset(&blankConfig, 0, sizeof(Configuration));
   blankConfig.configured = false;
   blankConfig.magic = 0;
-  EEPROM.put(0, blankConfig);
+  EEPROM.put(0, config);
   EEPROM.commit();
 }
 
@@ -188,7 +212,7 @@ void setupHardware() {
 }
 
 const char* setupPage = R"rawliteral(
-<!DOCTYPE html><html><head><title>Digital Water Curtain Setup</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background-color:#121212;color:#E0E0E0;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0}.container{background-color:#1E1E1E;padding:2rem;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.5);width:100%;max-width:400px;border:1px solid #333}h1{color:#BB86FC;text-align:center;margin-bottom:2rem}label{display:block;margin-bottom:.5rem;color:#B0B0B0}input{width:calc(100% - 20px);padding:10px;margin-bottom:1rem;border-radius:6px;border:1px solid #444;background-color:#2C2C2C;color:#E0E0E0;font-size:1rem}input:focus{outline:none;border-color:#BB86FC}button{background-color:#03DAC6;color:#000;border:none;padding:12px 20px;text-align:center;font-size:1rem;margin-top:1rem;cursor:pointer;border-radius:6px;width:100%;font-weight:bold}button:hover{background-color:#35fbe8}.msg{background-color:#333;padding:1rem;border-radius:6px;text-align:center;display:none;margin-top:1rem}</style></head><body><div class="container"><h1>Device Configuration</h1><form action="/save" method="POST"><label for="ssid">WiFi SSID:</label><input type="text" id="ssid" name="ssid" required><label for="password">WiFi Password:</label><input type="password" id="password"><label for="valves">Number of Valves (multiple of 8):</label><input type="number" id="valves" name="valves" value="16" step="8" min="8" required><label for="leds">Number of LEDs:</label><input type="number" id="leds" name="leds" value="16" min="1" required><button type="submit">Save and Reboot</button></form><div id="msg" class="msg"></div></div><script>document.querySelector('form').addEventListener('submit',function(e){e.preventDefault();const t=document.getElementById('msg');t.style.display='block',t.innerText='Saving configuration... The device will reboot. Connect to your WiFi and find the device IP address to continue.';const n=new FormData(e.target);fetch('/save',{method:'POST',body:new URLSearchParams(n)})</script></body></html>
+<!DOCTYPE html><html><head><title>Digital Water Curtain Setup</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background-color:#121212;color:#E0E0E0;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0}.container{background-color:#1E1E1E;padding:2rem;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.5);width:100%;max-width:400px;border:1px solid #333}h1{color:#BB86FC;text-align:center;margin-bottom:2rem}label{display:block;margin-bottom:.5rem;color:#B0B0B0}input{width:calc(100% - 20px);padding:10px;margin-bottom:1rem;border-radius:6px;border:1px solid #444;background-color:#2C2C2C;color:#E0E0E0;font-size:1rem}input:focus{outline:none;border-color:#BB86FC}button{background-color:#03DAC6;color:#000;border:none;padding:12px 20px;text-align:center;font-size:1rem;margin-top:1rem;cursor:pointer;border-radius:6px;width:100%;font-weight:bold}button:hover{background-color:#35fbe8}</style></head><body><div class="container"><h1>Device Configuration</h1><form action="/save" method="POST"><label for="ssid">WiFi SSID:</label><input type="text" id="ssid" name="ssid" required><label for="password">WiFi Password:</label><input type="password" id="password"><label for="valves">Number of Valves (multiple of 8):</label><input type="number" id="valves" name="valves" value="16" step="8" min="8" required><label for="leds">Number of LEDs:</label><input type="number" id="leds" name="leds" value="16" min="1" required><button type="submit">Save and Reboot</button></form></div></body></html>
 )rawliteral";
 
 void handleRoot(AsyncWebServerRequest *request){
@@ -320,29 +344,9 @@ void setupSTA() {
     ws.onEvent(onWsEvent);
     server.addHandler(&ws);
     
-    // --- INTELLIGENT onNotFound HANDLER (v2) ---
+    server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
+
     server.onNotFound([](AsyncWebServerRequest *request){
-        String path = request->url();
-        
-        // Heuristic: if the path has a file extension in its last segment,
-        // it's likely a request for a static asset.
-        int lastSlash = path.lastIndexOf('/');
-        int lastDot = path.lastIndexOf('.');
-
-        if (lastDot > lastSlash) {
-            // This looks like a file request.
-            // Extract the filename and try to serve it from the root of SPIFFS.
-            String filename = path.substring(lastSlash + 1);
-            String spiffsPath = "/" + filename;
-
-            if (SPIFFS.exists(spiffsPath)) {
-                request->send(SPIFFS, spiffsPath, getContentType(spiffsPath));
-                return;
-            }
-        }
-        
-        // For any client-side route (e.g., "/about") or a file that wasn't found,
-        // serve the main app shell. The client-side router will handle the rest.
         request->send(SPIFFS, "/index.html", "text/html");
     });
 

@@ -2,12 +2,14 @@
   "name": "nextn",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
-    "dev": "next dev --turbopack -p 9002",
-    "build": "next build",
-    "build:esp32": "next build && node scripts/prepare_for_esp32.js",
-    "start": "next start",
-    "lint": "next lint",
+    "dev": "vite --port 9002",
+    "build": "vite build",
+    "build:esp32": "vite build && node scripts/prepare_for_esp32.js",
+    "test:esp32": "node scripts/test_esp32_web.js",
+    "preview": "vite preview",
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -54,10 +56,12 @@
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "@vitejs/plugin-react": "^4.6.0",
+    "autoprefixer": "^10.4.21",
     "cheerio": "^1.0.0-rc.12",
     "fs-extra": "^11.2.0",
-    "postcss": "^8",
-    "tailwindcss": "^3.4.1",
-    "typescript": "^5"
+    "postcss": "^8.5.6",
+    "terser": "^5.43.1",
+    "vite": "^5.4.19"
   }
 }

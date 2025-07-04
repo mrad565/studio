@@ -43,3 +43,8 @@ next-env.d.ts
 # firebase
 firebase-debug.log
 firestore-debug.log
+
+# ESP32
+/esp32/data/
+/esp32/test_data/
+/test_build/

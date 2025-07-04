@@ -1,4 +1,4 @@
-"use client";
+// Remove the "use client" directive as it's not needed with Vite
 
 import { useState, useEffect, useRef } from "react";
 import { AppHeader } from "@/components/app-header";
